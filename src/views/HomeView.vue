@@ -1,49 +1,67 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { audioSamples, imgSamples, textSamples } from '@/utils/samples'
-import { Instagram } from 'lucide-vue-next'
+import {
+  CalendarDays,
+  CheckCircle2,
+  Instagram,
+  MapPin,
+  Music2,
+  Sparkles,
+  Trophy,
+  Users,
+  X,
+} from 'lucide-vue-next'
 import TgIcon from '@/assets/tg.svg'
 import { vMaska } from "maska/vue"
-import axios from 'axios'
-import { GAMES, getNearestThursday, parseRuDate } from '@/utils/games'
+import { GAMES, parseRuDate } from '@/utils/games'
 const botToken = import.meta.env.VITE_BOT_TOKEN
 const chatId = import.meta.env.VITE_CHAT_ID
 
-const types = ['text', 'image', 'audio']
-const typeLabels = {
+type QuestionType = 'text' | 'image' | 'audio'
+type SampleQuestion = {
+  text: string
+  choices: string[]
+  correctIndex: number
+  image?: string
+  audio?: string
+}
+
+const types: QuestionType[] = ['text', 'image', 'audio']
+const typeLabels: Record<QuestionType, string> = {
   text: 'Текст',
   image: 'Картинка',
   audio: 'Аудио'
 }
 
-const sampleQuestions = reactive({
+const sampleQuestions = reactive<Record<QuestionType, SampleQuestion[]>>({
   text: textSamples,
   image: imgSamples,
   audio: audioSamples,
 })
 
-const currentType = ref('text')
+const currentType = ref<QuestionType>('text')
 const currentIndex = ref(0)
-const selectedAnswer = ref(null)
+const selectedAnswer = ref<number | null>(null)
 const selectedGame = ref<string | null>(null)
 
 const currentQuestion = computed(() => {
   return sampleQuestions[currentType.value][currentIndex.value] || null
 })
 
-function selectTab(type: any) {
+function selectTab(type: QuestionType) {
   currentType.value = type
   currentIndex.value = 0
   selectedAnswer.value = null
 }
 
-function selectAnswer(index: any) {
+function selectAnswer(index: number) {
   if (selectedAnswer.value === null) {
     selectedAnswer.value = index
   }
 }
 
-function getChoiceClass(index) {
+function getChoiceClass(index: number) {
   if (selectedAnswer.value === null) return 'bg-white hover:bg-gray-100 border-gray-300'
 
   if (index === currentQuestion.value.correctIndex) return 'bg-green-100 border-green-500 text-green-700'
@@ -70,7 +88,7 @@ const isSubmitted = ref(false)
 const teamName = ref('')
 const captainName = ref('')
 const phoneNumber = ref('')
-const teamSize = ref(null)
+const teamSize = ref<string | null>(null)
 const isGuestPlayer = ref(false)
 
 const errors = ref({
@@ -220,6 +238,12 @@ const availableGames = computed(() => {
   })
 })
 
+const featuredGame = computed(() => availableGames.value[0] || null)
+
+const scheduleClass = computed(() => {
+  return availableGames.value.length === 1 ? 'schedule-list schedule-list--single' : 'schedule-list'
+})
+
 function onTeamSizeBlur() {
   if (teamSize.value === null || teamSize.value === '') return
 
@@ -236,248 +260,330 @@ function onTeamSizeBlur() {
 
 function getGameClass(id: number) {
   switch (id) {
-    case 62:
-      return 'game-kz'
-
-    case 1:
-      return 'game-rock'
-
     case 63:
       return 'game-rap'
 
+    case 64:
+      return 'game-pop'
+
+    case 65:
+      return 'game-rock'
+
     default:
-      return ''
+      return 'game-pop'
   }
 }
 </script>
 
 <template>
-  <div class="home">
-    <header class="home-header w-full relative bg-gradient-to-r from-purple-500 to-indigo-600 text-white min-h-[60vh] sm:min-h-[70vh] flex flex-col items-center justify-center text-center px-4">
-      <!-- Mock Logo -->
-      <div class="flex items-center gap-2 mb-4">
-        <div class="logo w-36">
-          <img src="@/assets/logo.svg" alt="logo" />
-        </div>
-        <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight z-10">IZZY QUIZ</h1>
-      </div>
+  <div class="home min-h-screen bg-[#090b13] text-white">
+    <header class="hero-stage relative isolate min-h-[86svh] overflow-hidden px-4 pb-8 pt-5 sm:px-6 lg:px-8">
+      <div class="absolute inset-0 -z-20 bg-[url('/rock-overlay.jpeg')] bg-cover bg-center"></div>
+      <div class="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(9,11,19,.96)_0%,rgba(9,11,19,.72)_48%,rgba(9,11,19,.45)_100%)]"></div>
 
-      <!-- Subtitle -->
-      <p class="text-lg sm:text-3xl max-w-2xl mb-6 z-10">
-        Интересные, увлекательные и нетривиальные ультра квизы в Алматы по музыке и не только
-      </p>
-
-      <a href="#schedule" class="bg-white text-purple-700 font-semibold px-8 py-4 rounded-full shadow-lg hover:bg-purple-200 transition-all transform hover:scale-110 z-10 mt-12 sm:mt-0">
-        НАШИ ИГРЫ
-      </a>
-
-      <!-- Social Media Links (Instagram, Telegram) -->
-      <div class="absolute top-4 right-4 flex gap-4 z-10">
-        <a href="https://www.instagram.com/iq_izzyquiz/" target="_blank" class="text-white transition transform hover:scale-110 hover:bg-transparent focus:outline-none">
-          <Instagram class="w-8 h-8" />
+      <nav class="mx-auto flex max-w-6xl items-center justify-between">
+        <a href="#" class="logo-link text-white hover:bg-transparent" aria-label="Izzy Quiz">
+          <img src="/logo_trans.png" alt="Izzy Quiz" class="h-16 w-16 sm:h-20 sm:w-20" />
         </a>
-        <a href="https://t.me/+baunhMVsfZ8yZTdi" target="_blank" class="text-white transition transform hover:scale-110 hover:bg-transparent focus:outline-none">
-          <img :src="TgIcon" alt="Telegram" class="w-8 h-8" />
-        </a>
-      </div>
 
-      <!-- Background Image (faint) -->
-      <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1589927986089-35812388d1b8')] bg-cover bg-center opacity-20 z-0"></div>
-      <div class="absolute inset-0 bg-black opacity-30 z-0"></div>
-    </header>
-
-    <div class="home-body">
-      <section id="schedule" class="py-20 px-4 bg-gradient-to-r from-purple-100 to-indigo-300 text-white">
-        <div class="max-w-4xl mx-auto text-center">
-          <h2 class="text-4xl sm:text-5xl font-bold mb-10 text-purple-700">Ближайшие игры</h2>
-
-          <div
-            v-for="game in availableGames"
-            :key="game.id"
-            :class="getGameClass(game.id)"
-            class="mb-8 bg-gradient-to-r from-purple-400 to-indigo-500 rounded-3xl shadow-xl p-8 sm:p-12 text-center transform hover:scale-105 transition-all duration-300"
+        <div class="flex items-center gap-3">
+          <a
+            href="https://www.instagram.com/iq_izzyquiz/"
+            target="_blank"
+            rel="noopener"
+            class="icon-link"
+            aria-label="Instagram"
           >
-            <h3 class="text-3xl sm:text-4xl text-gray-900 mb-6">
-              <span
-                class="inline-block bg-gradient-to-r from-white to-indigo-200 text-transparent bg-clip-text font-bold whitespace-pre-line"
-              >
-                {{ game.name }}
-              </span>
-            </h3>
+            <Instagram class="h-5 w-5" />
+          </a>
+          <a
+            href="https://t.me/+baunhMVsfZ8yZTdi"
+            target="_blank"
+            rel="noopener"
+            class="icon-link"
+            aria-label="Telegram"
+          >
+            <img :src="TgIcon" alt="" class="h-5 w-5" />
+          </a>
+        </div>
+      </nav>
 
-            <!-- Game Info with Icons -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-lg mb-8">
-              <!-- Date -->
-              <div class="flex items-center justify-start sm:justify-center gap-2">
-                <span class="text-3xl text-purple-600">📅</span>
-                <p class="text-gray-100 font-semibold">{{ game.date }}</p>
-              </div>
-
-              <!-- Location -->
-              <div class="flex items-center justify-start sm:justify-center gap-3">
-                <span class="text-3xl text-purple-600">📍</span>
-                <p class="text-gray-200 font-semibold text-left sm:text-center">{{ game.venue }}, <br class="hidden sm:block">{{ game.address }}</p>
-              </div>
-
-              <!-- Status -->
-              <div class="flex items-center justify-start sm:justify-center gap-2">
-                <span class="text-3xl text-purple-600">✅</span>
-                <p class="text-green-200 font-semibold">Открыта запись</p>
-              </div>
-            </div>
-
-            <!-- Register Button -->
-            <button
-              @click="openRegistration(game.shortName)"
-              class="bg-purple-600 text-white text-2xl font-bold mt-4 px-8 py-4 rounded-full hover:bg-purple-700 transition-transform transform hover:scale-105 shadow-md"
-            >
-              Записаться
-            </button>
+      <div class="mx-auto grid max-w-6xl items-center gap-8 pt-10 md:grid-cols-[1.08fr_.92fr] md:pt-12 lg:pt-14">
+        <div>
+          <div class="mb-5 inline-flex items-center gap-2 border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold uppercase tracking-[0.14em] text-cyan-100 backdrop-blur">
+            <Sparkles class="h-4 w-4 text-fuchsia-300" />
+            Музыкальные квизы в Алматы
           </div>
 
-        </div>
-      </section>
+          <h1 class="max-w-3xl text-4xl font-black uppercase leading-[0.98] text-white sm:text-5xl lg:text-6xl">
+            Не просто квиз. Музыкальный вечер.
+          </h1>
 
-      <section id="about" class="py-20 px-4 bg-gradient-to-r from-purple-500 to-indigo-600">
-        <div class="max-w-5xl mx-auto text-center">
-          <h2 class="text-3xl sm:text-5xl font-bold text-purple-100 mb-4">Что такое Izzy Quiz?</h2>
-          <p class="text-gray-200 text-xl max-w-3xl mx-auto mb-12">
-            Это не просто викторина — это вечер, наполненный музыкой, смехом и соревновательным духом. Собери команду, проверь свою эрудицию и выиграй крутые призы!
+          <p class="mt-5 max-w-2xl text-lg font-medium leading-8 text-slate-200 sm:text-xl">
+            Собирай команду, угадывай треки, спорь о любимых эпохах и забирай призы в барах Алматы.
           </p>
 
-          <div class="grid gap-8 sm:grid-cols-3 text-left">
-            <div class="bg-gray-100 p-8 rounded-xl shadow-md hover:shadow-xl transition-all">
-              <div class="text-5xl mb-4 text-center transform hover:scale-105 transition-all">🎵</div>
-              <h3 class="text-xl font-semibold text-gray-800 mb-2">Музыкальные и не только раунды</h3>
-              <p class="text-gray-600">Все жанры, все эпохи, всевозможные механики и многое другое</p>
-            </div>
+          <div class="mt-7 flex flex-col gap-3 sm:flex-row">
+            <a href="#schedule" class="primary-action">
+              Смотреть игры
+            </a>
+            <a href="#sample" class="secondary-action">
+              Попробовать вопрос
+            </a>
+          </div>
+        </div>
 
-            <div class="bg-gray-100 p-8 rounded-xl shadow-md hover:shadow-xl transition-all">
-              <div class="text-5xl mb-4 text-center transform hover:scale-105 transition-all">🍻</div>
-              <h3 class="text-xl font-semibold text-gray-800 mb-2">Уютная атмосфера бара</h3>
-              <p class="text-gray-600">Живое общение, напитки и дружеский вайб в центре событий.</p>
+        <div v-if="featuredGame" class="event-panel hidden md:block">
+          <p class="text-sm font-black uppercase tracking-[0.16em] text-cyan-200">Ближайшая игра</p>
+          <h2 class="mt-3 text-3xl font-black leading-tight text-white sm:text-4xl">
+            {{ featuredGame.name }}
+          </h2>
+          <div class="mt-7 space-y-4">
+            <div class="event-row">
+              <CalendarDays class="h-5 w-5 text-fuchsia-300" />
+              <span>{{ featuredGame.date }}</span>
             </div>
+            <div class="event-row">
+              <MapPin class="h-5 w-5 text-cyan-300" />
+              <span>{{ featuredGame.venue }}, {{ featuredGame.address }}</span>
+            </div>
+          </div>
+          <a href="#schedule" class="mt-8 inline-flex text-sm font-black uppercase tracking-[0.14em] text-white hover:bg-transparent">
+            Детали ниже
+          </a>
+        </div>
 
-            <div class="bg-gray-100 p-8 rounded-xl shadow-md hover:shadow-xl transition-all">
-              <div class="text-5xl mb-4 text-center transform hover:scale-105 transition-all">🎁</div>
-              <h3 class="text-xl font-semibold text-gray-800 mb-2">Призы и эмоции</h3>
-              <p class="text-gray-600">Побеждай и получай призы, включая бутылку игристого с кастомным лейблом 🥂</p>
+        <div v-else class="event-panel event-panel--empty hidden md:block">
+          <p class="text-sm font-black uppercase tracking-[0.16em] text-cyan-200">Ближайшая игра</p>
+          <h2 class="mt-3 text-3xl font-black leading-tight text-white sm:text-4xl">
+            Скоро объявим новую дату
+          </h2>
+          <p class="mt-5 text-base font-semibold leading-7 text-slate-200">
+            Сейчас активных игр нет. Анонсы первыми появляются в Instagram и Telegram.
+          </p>
+          <a href="#schedule" class="mt-8 inline-flex text-sm font-black uppercase tracking-[0.14em] text-white hover:bg-transparent">
+            Где следить
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="schedule" class="section-band bg-[#f6f7fb] text-slate-950">
+        <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div class="section-heading">
+            <p class="eyebrow text-fuchsia-700">Расписание</p>
+            <h2>Выбери свою игру</h2>
+            <p>
+              Каждая игра отличается темой, музыкой и атмосферой. Регистрация занимает меньше минуты.
+            </p>
+          </div>
+
+          <div v-if="availableGames.length" :class="scheduleClass">
+            <article
+              v-for="game in availableGames"
+              :key="game.id"
+              :class="getGameClass(game.id)"
+              class="game-card"
+            >
+              <div class="game-card__shade"></div>
+              <div class="game-card__content">
+                <div>
+                  <div class="mb-5 inline-flex items-center gap-2 bg-black/35 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white backdrop-blur">
+                    <CheckCircle2 class="h-4 w-4 text-emerald-300" />
+                    Открыта запись
+                  </div>
+                  <h3 class="game-card__title">
+                    {{ game.name }}
+                  </h3>
+                </div>
+
+                <div class="game-card__footer">
+                  <div class="game-card__details">
+                    <div class="game-meta">
+                      <CalendarDays class="h-5 w-5" />
+                      <span>{{ game.date }}</span>
+                    </div>
+                    <div class="game-meta">
+                      <MapPin class="h-5 w-5" />
+                      <span>{{ game.venue }}, {{ game.address }}</span>
+                    </div>
+                  </div>
+                  <div class="game-card__action">
+                    <button
+                      @click="openRegistration(game.shortName)"
+                      class="register-button"
+                    >
+                      Записаться
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div v-else class="empty-schedule">
+            <Music2 class="h-10 w-10 text-fuchsia-600" />
+            <h3>Новые даты скоро появятся</h3>
+            <p>
+              Последние игры уже прошли. Следи за Instagram и Telegram, там анонсы появляются первыми.
+            </p>
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <a href="https://www.instagram.com/iq_izzyquiz/" target="_blank" rel="noopener" class="primary-action primary-action--dark">
+                Instagram
+              </a>
+              <a href="https://t.me/+baunhMVsfZ8yZTdi" target="_blank" rel="noopener" class="secondary-action secondary-action--dark">
+                Telegram
+              </a>
             </div>
           </div>
         </div>
       </section>
-      <section class="py-20 px-4 bg-gray-50">
-        <h2 class="text-3xl sm:text-4xl font-bold text-purple-800 mb-4 text-center">Примеры сестрам задеваешь</h2>
-        <div class="max-w-xl mx-auto bg-white p-6 rounded-xl shadow-md">
-          <!-- Tabs -->
-          <div class="flex justify-center mb-6 gap-4">
-            <button
-              v-for="type in types"
-              :key="type"
-              @click="selectTab(type)"
-              :class="[
-            'px-4 py-2 rounded-full transition',
-            currentType === type ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-700'
-          ]"
-            >
-              {{ typeLabels[type] }}
-            </button>
+
+      <section id="about" class="section-band bg-[#090b13] text-white">
+        <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div class="section-heading section-heading--dark">
+            <p class="eyebrow text-cyan-300">Формат</p>
+            <h2>Вечер, где плейлист становится спортом</h2>
+            <p>
+              Не нужно быть энциклопедией. Нужны команда, азарт и желание вспомнить тот самый трек быстрее соседнего стола.
+            </p>
           </div>
 
-          <!-- Question Display -->
-          <div v-if="currentQuestion" class="space-y-4">
-            <h3 class="text-xl font-semibold text-gray-800 text-center">{{ currentQuestion.text }}</h3>
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="feature-tile">
+              <Music2 class="h-8 w-8 text-cyan-300" />
+              <h3>Музыка всех эпох</h3>
+              <p>Поп, рок, рэп, ностальгия, кино и неожиданные механики в одном вечере.</p>
+            </div>
+            <div class="feature-tile">
+              <Users class="h-8 w-8 text-fuchsia-300" />
+              <h3>Команда или легионер</h3>
+              <p>Приходи своей компанией или регистрируйся один, чтобы найти команду на месте.</p>
+            </div>
+            <div class="feature-tile">
+              <Trophy class="h-8 w-8 text-amber-300" />
+              <h3>Призы и барный вайб</h3>
+              <p>Соревнование, напитки, шутки ведущего и призы для тех, кто дожимает финал.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            <!-- Media -->
-            <img
-              v-if="currentQuestion.image"
-              :src="currentQuestion.image"
-              alt="question image"
-              class="w-48 rounded-md mx-auto"
-            />
-            <audio
-              v-if="currentQuestion.audio"
-              controls
-              class="w-full"
-              :src="currentQuestion.audio"
-            ></audio>
+      <section id="sample" class="section-band bg-white text-slate-950">
+        <div class="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8">
+          <div class="section-heading section-heading--left">
+            <p class="eyebrow text-fuchsia-700">Разминка</p>
+            <h2>Попробуй вопрос перед игрой</h2>
+            <p>
+              На игре бывают текстовые, визуальные и аудио-вопросы. Здесь маленький демо-кусочек формата.
+            </p>
+          </div>
 
-            <!-- Choices -->
-            <div class="space-y-2">
+          <div class="question-panel">
+            <div class="mb-6 grid grid-cols-3 gap-2 rounded-lg bg-slate-100 p-1">
               <button
-                v-for="(choice, idx) in currentQuestion.choices"
-                :key="idx"
-                @click="selectAnswer(idx)"
-                class="w-full text-left px-4 py-2 rounded-lg border transition"
-                :class="getChoiceClass(idx)"
-                :disabled="selectedAnswer !== null"
+                v-for="type in types"
+                :key="type"
+                @click="selectTab(type)"
+                :class="[
+                  'h-11 rounded-md text-sm font-black uppercase tracking-[0.08em] transition',
+                  currentType === type ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
+                ]"
               >
-                {{ choice }}
+                {{ typeLabels[type] }}
               </button>
             </div>
 
-            <!-- Next -->
-            <button
-              @click="nextQuestion"
-              class="mt-6 px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition"
-              :disabled="selectedAnswer === null"
-            >
-              Следующий вопрос →
-            </button>
+            <div v-if="currentQuestion" class="space-y-5">
+              <h3 class="text-2xl font-black leading-snug text-slate-950">{{ currentQuestion.text }}</h3>
+
+              <img
+                v-if="currentQuestion.image"
+                :src="currentQuestion.image"
+                alt="question image"
+                class="mx-auto aspect-square w-52 rounded-lg object-cover"
+              />
+              <audio
+                v-if="currentQuestion.audio"
+                controls
+                class="w-full"
+                :src="currentQuestion.audio"
+              ></audio>
+
+              <div class="space-y-3">
+                <button
+                  v-for="(choice, idx) in currentQuestion.choices"
+                  :key="idx"
+                  @click="selectAnswer(idx)"
+                  class="w-full rounded-lg border px-4 py-3 text-left font-semibold transition"
+                  :class="getChoiceClass(idx)"
+                  :disabled="selectedAnswer !== null"
+                >
+                  {{ choice }}
+                </button>
+              </div>
+
+              <button
+                @click="nextQuestion"
+                class="primary-action primary-action--dark w-full justify-center disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="selectedAnswer === null"
+              >
+                Следующий вопрос
+              </button>
+            </div>
           </div>
         </div>
       </section>
-    </div>
-    <footer class="flex justify-center flex-col sm:flex-row w-full text-center py-6 bg-gradient-to-t from-gray-50 via-white to-gray-100 mt-12">
-      <div class="logo w-24 sm:mr-5 mx-auto sm:ml-0">
-        <img src="@/assets/logo.svg" alt="logo" />
-      </div>
-      <p class="text-sm text-gray-500 flex flex-col sm:flex-row content-center justify-center items-center">
-        Сделано с ❤️  для всех любителей музыки.
+    </main>
+
+    <footer class="bg-[#090b13] px-4 py-8 text-white">
+      <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 border-t border-white/10 pt-8 text-center sm:flex-row sm:text-left">
+        <div class="flex items-center gap-3">
+          <img src="/logo_trans.png" alt="Izzy Quiz" class="h-14 w-14" />
+          <p class="text-sm font-semibold text-slate-300">Сделано для тех, кто узнает песню с первых трех секунд.</p>
+        </div>
         <a
           href="https://instagram.com/iq_izzyquiz"
           target="_blank"
           rel="noopener"
-          class="text-purple-600 hover:text-purple-800 hover:bg-transparent inline-flex items-center gap-1 my-5 sm:my-0"
+          class="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-cyan-200 hover:bg-transparent"
         >
-          <Instagram class="w-5 h-5" />
-          Подписывайтесь :)
+          <Instagram class="h-5 w-5" />
+          Instagram
         </a>
-      </p>
+      </div>
     </footer>
-    <!-- Modal -->
     <div
       v-if="isModalOpen"
       id="modal-bg"
-      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm"
       @click="clickOutside"
     >
-      <div class="bg-white rounded-3xl p-8 max-w-md w-full mx-4 relative">
-
-        <!-- Close button -->
+      <div class="relative max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 text-slate-950 shadow-2xl sm:p-8">
         <button
           @click="closeRegistration"
-          class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-3xl leading-none"
+          class="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+          aria-label="Закрыть"
         >
-          ✕
+          <X class="h-5 w-5" />
         </button>
 
-        <!-- If submitted -->
         <div v-if="isSubmitted" class="text-center">
-          <h3 class="text-3xl font-bold text-purple-700 mb-6">Спасибо за регистрацию!</h3>
-          <p class="text-gray-600 mb-6">Мы скоро свяжемся с вами.</p>
+          <h3 class="mb-4 pr-8 text-3xl font-black text-slate-950">Спасибо за регистрацию!</h3>
+          <p class="mb-6 text-slate-600">Мы скоро свяжемся с вами.</p>
           <button
             @click="closeRegistration"
-            class="bg-purple-600 text-white font-bold py-3 px-8 rounded-full hover:bg-purple-700 transition"
+            class="primary-action primary-action--dark mx-auto"
           >
             Закрыть
           </button>
         </div>
 
-        <!-- If not yet submitted -->
         <div v-else>
-          <h3 class="text-3xl font-semibold text-purple-700 mb-0">Регистрация на игру</h3>
-          <h4 class="text-2xl font-bold text-purple-900 mb-6">{{ selectedGame }}</h4>
+          <p class="eyebrow mb-2 text-fuchsia-700">Регистрация</p>
+          <h3 class="mb-1 pr-8 text-3xl font-black leading-tight text-slate-950">Записаться на игру</h3>
+          <h4 class="mb-6 text-lg font-bold text-slate-600">{{ selectedGame }}</h4>
 
           <form @submit.prevent="submitForm" class="space-y-4">
             <div>
@@ -486,7 +592,7 @@ function getGameClass(id: number) {
                 v-model="teamName"
                 :disabled="isGuestPlayer"
                 placeholder="Название команды"
-                class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                class="form-field disabled:bg-slate-100 disabled:text-slate-400"
               />
               <p v-if="errors.teamName" class="text-red-500 text-sm mt-1">{{ errors.teamName }}</p>
 
@@ -495,9 +601,9 @@ function getGameClass(id: number) {
                   type="checkbox"
                   id="isGuestPlayer"
                   v-model="isGuestPlayer"
-                  class="form-checkbox h-4 w-4 text-purple-500 border-gray-300 focus:ring-purple-400"
+                  class="h-4 w-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500"
                 />
-                <label for="isGuestPlayer" class="ml-2 text-sm text-gray-700">Я легионер</label>
+                <label for="isGuestPlayer" class="ml-2 text-sm font-semibold text-slate-700">Я легионер</label>
               </div>
             </div>
 
@@ -506,7 +612,7 @@ function getGameClass(id: number) {
                 type="text"
                 v-model="captainName"
                 placeholder="Ваше имя"
-                class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                class="form-field"
               />
               <p v-if="errors.captainName" class="text-red-500 text-sm mt-1">{{ errors.captainName }}</p>
             </div>
@@ -517,7 +623,7 @@ function getGameClass(id: number) {
                 v-model="phoneNumber"
                 placeholder="Номер телефона"
                 v-maska="'+7 (###) ###-##-##'"
-                class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                class="form-field"
               />
               <p v-if="errors.phoneNumber" class="text-red-500 text-sm mt-1">{{ errors.phoneNumber }}</p>
             </div>
@@ -530,7 +636,7 @@ function getGameClass(id: number) {
                 max="12"
                 @blur="onTeamSizeBlur"
                 placeholder="Игроков в команде"
-                class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                class="form-field"
               />
               <p v-if="errors.teamSize" class="text-red-500 text-sm mt-1">{{ errors.teamSize }}</p>
             </div>
@@ -542,7 +648,7 @@ function getGameClass(id: number) {
             <button
               type="submit"
               :disabled="isLoading"
-              class="w-full bg-purple-600 text-white font-bold py-3 rounded-full hover:bg-purple-700 transition flex items-center justify-center"
+              class="primary-action primary-action--dark w-full justify-center disabled:cursor-wait disabled:opacity-70"
             >
               <svg
                 v-if="isLoading"
@@ -566,130 +672,386 @@ function getGameClass(id: number) {
 </template>
 
 <style scoped lang="scss">
-.game-kz {
-  position: relative;
-  overflow: hidden;
+.hero-stage::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 38%;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(9, 11, 19, 0) 0%, #090b13 92%);
+}
 
+.logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.logo-link img {
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 18px rgba(103, 232, 249, 0.18));
+}
+
+.icon-link {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.icon-link:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.primary-action,
+.secondary-action {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.primary-action {
+  color: #090b13;
+  background: #67e8f9;
+  box-shadow: 0 18px 34px rgba(103, 232, 249, 0.24);
+}
+
+.primary-action:hover,
+.secondary-action:hover {
+  transform: translateY(-2px);
+}
+
+.secondary-action {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.primary-action--dark {
+  color: white;
+  background: #090b13;
+  box-shadow: 0 16px 32px rgba(9, 11, 19, 0.18);
+}
+
+.secondary-action--dark {
+  border-color: rgba(9, 11, 19, 0.16);
+  color: #090b13;
+  background: white;
+}
+
+.event-panel {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 28px;
   background:
-    linear-gradient(
-        135deg,
-        rgba(183, 125, 255, 0.95) 0%,
-        rgba(108, 97, 255, 0.95) 45%,
-        rgba(74, 95, 255, 0.95) 100%
-    );
-
-  border-radius: 32px;
+    linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(88, 28, 135, 0.72)),
+    rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
 }
 
-.game-kz::before {
-  content: '';
+.event-panel--empty {
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(49, 46, 129, 0.72)),
+    rgba(255, 255, 255, 0.08);
+}
 
+.event-row,
+.game-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-weight: 800;
+}
+
+.section-band {
+  padding: 88px 0;
+}
+
+.section-heading {
+  margin: 0 auto 36px;
+  max-width: 720px;
+  text-align: center;
+}
+
+.section-heading--left {
+  margin: 0;
+  text-align: left;
+}
+
+.section-heading h2 {
+  margin-top: 8px;
+  font-size: clamp(2.2rem, 5vw, 4.6rem);
+  line-height: 0.98;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.section-heading p:last-child {
+  margin-top: 16px;
+  color: #475569;
+  font-size: 1.08rem;
+  font-weight: 600;
+  line-height: 1.8;
+}
+
+.section-heading--dark p:last-child {
+  color: #cbd5e1;
+}
+
+.eyebrow {
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.schedule-list {
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 1024px) {
+  .schedule-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .schedule-list--single {
+    grid-template-columns: minmax(0, 780px);
+    justify-content: center;
+  }
+}
+
+.game-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at top left, rgba(217, 70, 239, 0.55), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(103, 232, 249, 0.25), transparent 30%),
+    linear-gradient(135deg, #562a8e 0%, #273ea8 48%, #07122d 100%);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+}
+
+.game-card__shade {
   position: absolute;
   inset: 0;
-
-  background-image: url('/kz-overlay.jpeg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-
-  pointer-events: none;
-}
-
-.game-kz > * {
-  position: relative;
   z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(2, 6, 23, 0.68) 100%),
+    linear-gradient(90deg, rgba(217, 70, 239, 0.18), rgba(34, 211, 238, 0.1));
 }
 
-.game-rock {
+.game-card__content {
   position: relative;
-  overflow: hidden;
-
-  background: linear-gradient(
-      135deg,
-      #8b5cf6 0%,
-      #6d4cff 45%,
-      #3f5efb 100%
-  );
-
-  border-radius: 32px;
+  z-index: 10;
+  display: flex;
+  min-height: 340px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 28px;
 }
 
-.game-rock::before {
-  content: '';
-
-  position: absolute;
-  inset: 0;
-
-  background-image: url('/rock-overlay.jpeg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-
-  opacity: 0.65;
-
-  pointer-events: none;
+.game-card__title {
+  max-width: 12ch;
+  color: white;
+  font-size: clamp(2rem, 4vw, 2.85rem);
+  font-weight: 900;
+  line-height: 1.08;
 }
 
-.game-rock > * {
-  position: relative;
-  z-index: 2;
+.game-card__footer {
+  display: grid;
+  gap: 22px;
 }
 
-.game-rock .game-title {
-  text-shadow:
-    0 0 10px rgba(255,255,255,.3),
-    0 2px 8px rgba(0,0,0,.4);
+.game-card__details {
+  display: grid;
+  gap: 14px;
 }
 
-.game-rap {
-  position: relative;
-  overflow: hidden;
-
-  background: linear-gradient(
-      135deg,
-      #9d4edd 0%,
-      #6c3cff 50%,
-      #3b5bdb 100%
-  );
+.game-meta {
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.game-rap::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-
-  background-image: url('/rap-overlay.jpeg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-
-  opacity: 0.55;
-
-  pointer-events: none;
+.game-card__action {
+  align-self: stretch;
 }
 
-.game-rap > * {
-  position: relative;
-  z-index: 2;
+.register-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #090b13;
+  background: white;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: transform 0.2s ease, background 0.2s ease;
 }
 
-@media (max-width: 768px) {
-  .game-kz::before {
-    background-position: right center;
-    background-size: cover;
-    opacity: 0.6;
+.register-button:hover {
+  transform: translateY(-2px);
+  background: #67e8f9;
+}
+
+@media (min-width: 1024px) {
+  .schedule-list--single .game-card__content {
+    min-height: 300px;
+    padding: 34px;
   }
 
-  .game-rock::before {
-    background-position: left center;
-    background-size: cover;
-    opacity: 0.6;
+  .schedule-list--single .game-card__title {
+    max-width: 15ch;
+    font-size: clamp(2.6rem, 4vw, 3.8rem);
   }
 
-  .game-rap::before {
-    background-position: right center;
-    background-size: cover;
-    opacity: 0.5;
+  .schedule-list--single .game-card__footer {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    align-items: end;
+  }
+}
+
+.empty-schedule,
+.question-panel,
+.feature-tile {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.empty-schedule {
+  display: flex;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 34px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.empty-schedule h3 {
+  font-size: 2rem;
+  line-height: 1.1;
+  font-weight: 900;
+}
+
+.empty-schedule p {
+  max-width: 560px;
+  color: #475569;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.feature-tile {
+  padding: 28px;
+  color: white;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+.feature-tile h3 {
+  margin-top: 20px;
+  font-size: 1.35rem;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.feature-tile p {
+  margin-top: 10px;
+  color: #cbd5e1;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.question-panel {
+  padding: 28px;
+}
+
+.form-field {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #0f172a;
+  font-weight: 700;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-field:focus {
+  border-color: #d946ef;
+  box-shadow: 0 0 0 3px rgba(217, 70, 239, 0.16);
+}
+
+@media (max-width: 767px) {
+  .hero-stage {
+    min-height: auto;
+  }
+
+  .event-panel {
+    padding: 22px;
+  }
+
+  .section-band {
+    padding: 64px 0;
+  }
+
+  .primary-action,
+  .secondary-action {
+    width: 100%;
+  }
+
+  .game-card__content {
+    min-height: 330px;
+    padding: 22px;
+  }
+
+  .game-card__title {
+    max-width: 13ch;
+    font-size: clamp(1.9rem, 9vw, 2.55rem);
+    line-height: 1.12;
+  }
+
+  .game-meta {
+    font-size: 1rem;
+    line-height: 1.45;
+  }
+
+  .game-card__footer {
+    gap: 18px;
+  }
+
+  .empty-schedule,
+  .question-panel,
+  .feature-tile {
+    padding: 22px;
   }
 }
 </style>

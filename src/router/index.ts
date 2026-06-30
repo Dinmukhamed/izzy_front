@@ -3,6 +3,7 @@ import HomeView from '@/views/HomeView.vue'
 import MusicView from '@/views/MusicView.vue'
 import MovieView from '@/views/MovieView.vue'
 import RanksView from '@/views/RanksView.vue'
+import RandomizerView from '@/views/RandomizerView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -26,7 +27,12 @@ const router = createRouter({
       path: '/rank',
       name: 'rank',
       component: RanksView
-    }
+    },
+    {
+      path: '/randomizer',
+      name: 'randomizer',
+      component: RandomizerView,
+    },
   ],
 })
 
