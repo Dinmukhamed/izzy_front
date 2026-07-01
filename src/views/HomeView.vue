@@ -281,12 +281,15 @@ function getGameClass(id: number) {
       <div class="absolute inset-0 -z-20 bg-[url('/rock-overlay.jpeg')] bg-cover bg-center"></div>
       <div class="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(9,11,19,.96)_0%,rgba(9,11,19,.72)_48%,rgba(9,11,19,.45)_100%)]"></div>
 
-      <nav class="mx-auto flex max-w-6xl items-center justify-between">
+      <nav class="site-nav mx-auto flex max-w-6xl items-center justify-between">
         <a href="#" class="logo-link text-white hover:bg-transparent" aria-label="Izzy Quiz">
           <img src="/logo_trans.png" alt="Izzy Quiz" class="h-16 w-16 sm:h-20 sm:w-20" />
+          <span class="brand-copy">
+            <strong>Izzy Quiz</strong>
+          </span>
         </a>
 
-        <div class="flex items-center gap-3">
+        <div class="social-links social-links--top flex items-center gap-3">
           <a
             href="https://www.instagram.com/iq_izzyquiz/"
             target="_blank"
@@ -327,8 +330,31 @@ function getGameClass(id: number) {
             <a href="#schedule" class="primary-action">
               Смотреть игры
             </a>
-            <a href="#sample" class="secondary-action">
+            <a href="#sample" class="secondary-action sample-action">
               Попробовать вопрос
+            </a>
+          </div>
+
+          <div class="mobile-social-links">
+            <a
+              href="https://www.instagram.com/iq_izzyquiz/"
+              target="_blank"
+              rel="noopener"
+              class="mobile-social-link"
+              aria-label="Instagram"
+            >
+              <Instagram class="h-5 w-5" />
+              Instagram
+            </a>
+            <a
+              href="https://t.me/+baunhMVsfZ8yZTdi"
+              target="_blank"
+              rel="noopener"
+              class="mobile-social-link"
+              aria-label="Telegram"
+            >
+              <img :src="TgIcon" alt="" class="h-5 w-5" />
+              Telegram
             </a>
           </div>
         </div>
@@ -684,9 +710,11 @@ function getGameClass(id: number) {
 .logo-link {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 12px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
+  padding: 6px 14px 6px 6px;
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(10px);
 }
@@ -695,6 +723,19 @@ function getGameClass(id: number) {
   display: block;
   object-fit: contain;
   filter: drop-shadow(0 8px 18px rgba(103, 232, 249, 0.18));
+}
+
+.brand-copy {
+  display: grid;
+  line-height: 1;
+}
+
+.brand-copy strong {
+  color: white;
+  font-size: clamp(1.35rem, 2.8vw, 2rem);
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .icon-link {
@@ -713,6 +754,10 @@ function getGameClass(id: number) {
 .icon-link:hover {
   transform: translateY(-2px);
   background: rgba(255, 255, 255, 0.18);
+}
+
+.mobile-social-links {
+  display: none;
 }
 
 .primary-action,
@@ -872,11 +917,12 @@ function getGameClass(id: number) {
 }
 
 .game-card__title {
-  max-width: 12ch;
+  max-width: 100%;
   color: white;
-  font-size: clamp(2rem, 4vw, 2.85rem);
+  font-size: clamp(1.85rem, 3vw, 2.55rem);
   font-weight: 900;
-  line-height: 1.08;
+  line-height: 1.05;
+  text-wrap: balance;
 }
 
 .game-card__footer {
@@ -924,8 +970,8 @@ function getGameClass(id: number) {
   }
 
   .schedule-list--single .game-card__title {
-    max-width: 15ch;
-    font-size: clamp(2.6rem, 4vw, 3.8rem);
+    max-width: 100%;
+    font-size: clamp(2.2rem, 3.1vw, 3.1rem);
   }
 
   .schedule-list--single .game-card__footer {
@@ -1015,6 +1061,66 @@ function getGameClass(id: number) {
     min-height: auto;
   }
 
+  .site-nav {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .logo-link {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 8px 14px 8px 8px;
+  }
+
+  .logo-link img {
+    width: 72px;
+    height: 72px;
+  }
+
+  .brand-copy strong {
+    font-size: clamp(2rem, 11vw, 3rem);
+    letter-spacing: 0.04em;
+  }
+
+  .social-links {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .social-links--top {
+    display: none;
+  }
+
+  .sample-action {
+    display: none;
+  }
+
+  .mobile-social-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .mobile-social-link {
+    display: inline-flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    color: white;
+    background: rgba(255, 255, 255, 0.09);
+    font-size: 0.82rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    backdrop-filter: blur(12px);
+  }
+
   .event-panel {
     padding: 22px;
   }
@@ -1034,9 +1140,9 @@ function getGameClass(id: number) {
   }
 
   .game-card__title {
-    max-width: 13ch;
-    font-size: clamp(1.9rem, 9vw, 2.55rem);
-    line-height: 1.12;
+    max-width: 100%;
+    font-size: clamp(1.65rem, 7.6vw, 2.25rem);
+    line-height: 1.08;
   }
 
   .game-meta {

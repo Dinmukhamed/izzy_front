@@ -18,6 +18,8 @@
     "lucide-vue-next": "^0.503.0",
     "maska": "^3.1.1",
     "pinia": "^2.2.4",
+    "qrcode": "^1.5.4",
+    "socket.io-client": "^4.8.3",
     "string-similarity": "^4.0.4",
     "vue": "^3.5.12",
     "vue-router": "^4.4.5",
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@tsconfig/node20": "^20.1.4",
     "@types/node": "^20.16.11",
+    "@types/qrcode": "^1.5.6",
     "@types/string-similarity": "^4.0.2",
     "@vitejs/plugin-vue": "^5.1.4",
     "@vue/eslint-config-prettier": "^10.0.0",
