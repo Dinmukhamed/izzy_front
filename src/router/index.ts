@@ -4,7 +4,8 @@ import MusicView from '@/views/MusicView.vue'
 import MovieView from '@/views/MovieView.vue'
 import RanksView from '@/views/RanksView.vue'
 import RandomizerView from '@/views/RandomizerView.vue'
-import QuizAdminView from '@/views/QuizAdminView.vue'
+import QuizGamesView from '@/views/QuizGamesView.vue'
+import QuizTemplatesView from '@/views/QuizTemplatesView.vue'
 import QuizHostView from '@/views/QuizHostView.vue'
 import QuizJoinView from '@/views/QuizJoinView.vue'
 import QuizPlayerView from '@/views/QuizPlayerView.vue'
@@ -40,7 +41,17 @@ const router = createRouter({
     {
       path: '/quiz/admin',
       name: 'quiz-admin',
-      component: QuizAdminView,
+      component: QuizGamesView,
+    },
+    {
+      path: '/quiz/games',
+      name: 'quiz-games',
+      component: QuizGamesView,
+    },
+    {
+      path: '/quiz/templates',
+      name: 'quiz-templates',
+      component: QuizTemplatesView,
     },
     {
       path: '/quiz/join/:code?',
