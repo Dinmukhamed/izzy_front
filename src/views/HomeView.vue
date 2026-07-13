@@ -241,7 +241,10 @@ const availableGames = computed(() => {
 const featuredGame = computed(() => availableGames.value[0] || null)
 
 const scheduleClass = computed(() => {
-  return availableGames.value.length === 1 ? 'schedule-list schedule-list--single' : 'schedule-list'
+  if (availableGames.value.length === 1) return 'schedule-list schedule-list--single'
+  if (availableGames.value.length === 2) return 'schedule-list schedule-list--two'
+
+  return 'schedule-list'
 })
 
 function onTeamSizeBlur() {
@@ -261,6 +264,9 @@ function onTeamSizeBlur() {
 function getGameClass(id: number) {
   switch (id) {
     case 63:
+      return 'game-rap'
+
+    case 68:
       return 'game-rap'
 
     case 64:
@@ -419,9 +425,14 @@ function getGameClass(id: number) {
                     <CheckCircle2 class="h-4 w-4 text-emerald-300" />
                     Открыта запись
                   </div>
-                  <h3 class="game-card__title">
-                    {{ game.name }}
-                  </h3>
+                  <div class="game-card__heading">
+                    <h3 class="game-card__title">
+                      {{ game.title }}
+                    </h3>
+                    <p class="game-card__name">
+                      {{ game.name }}
+                    </p>
+                  </div>
                 </div>
 
                 <div class="game-card__footer">
@@ -884,6 +895,12 @@ function getGameClass(id: number) {
     grid-template-columns: minmax(0, 780px);
     justify-content: center;
   }
+
+  .schedule-list--two {
+    grid-template-columns: repeat(2, minmax(0, 560px));
+    justify-content: center;
+    gap: 28px;
+  }
 }
 
 .game-card {
@@ -895,6 +912,29 @@ function getGameClass(id: number) {
     radial-gradient(circle at 88% 18%, rgba(103, 232, 249, 0.25), transparent 30%),
     linear-gradient(135deg, #562a8e 0%, #273ea8 48%, #07122d 100%);
   box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+}
+
+.game-card.game-rap {
+  background:
+    linear-gradient(135deg, #7e22ce 0%, #4c1d95 48%, #172554 100%);
+}
+
+.game-card.game-rap::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background-image: url('/rap-overlay.jpeg');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.game-card.game-rap .game-card__shade {
+  background:
+    linear-gradient(180deg, rgba(30, 5, 64, 0.18) 0%, rgba(2, 6, 23, 0.78) 100%),
+    linear-gradient(90deg, rgba(88, 28, 135, 0.18), rgba(30, 64, 175, 0.08));
 }
 
 .game-card__shade {
@@ -910,18 +950,32 @@ function getGameClass(id: number) {
   position: relative;
   z-index: 10;
   display: flex;
-  min-height: 340px;
+  min-height: 326px;
   flex-direction: column;
   justify-content: space-between;
-  padding: 28px;
+  padding: 30px;
+}
+
+.game-card__heading {
+  display: grid;
+  gap: 8px;
 }
 
 .game-card__title {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: clamp(0.9rem, 1.2vw, 1.05rem);
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.game-card__name {
   max-width: 100%;
   color: white;
-  font-size: clamp(1.85rem, 3vw, 2.55rem);
+  font-size: clamp(1.75rem, 2.45vw, 2.32rem);
   font-weight: 900;
-  line-height: 1.05;
+  line-height: 1.04;
   text-wrap: balance;
 }
 
@@ -969,7 +1023,7 @@ function getGameClass(id: number) {
     padding: 34px;
   }
 
-  .schedule-list--single .game-card__title {
+  .schedule-list--single .game-card__name {
     max-width: 100%;
     font-size: clamp(2.2rem, 3.1vw, 3.1rem);
   }
@@ -977,6 +1031,22 @@ function getGameClass(id: number) {
   .schedule-list--single .game-card__footer {
     grid-template-columns: minmax(0, 1fr) 260px;
     align-items: end;
+  }
+
+  .schedule-list--two .game-card__content {
+    min-height: 330px;
+    padding: 34px;
+  }
+
+  .schedule-list--two .game-card__name {
+    font-size: clamp(2rem, 2.55vw, 2.7rem);
+    line-height: 1.02;
+  }
+
+  .schedule-list--two .game-card__footer {
+    grid-template-columns: minmax(0, 1fr) 220px;
+    align-items: end;
+    gap: 24px;
   }
 }
 
@@ -1135,14 +1205,23 @@ function getGameClass(id: number) {
   }
 
   .game-card__content {
-    min-height: 330px;
-    padding: 22px;
+    min-height: 300px;
+    padding: 24px;
+  }
+
+  .game-card.game-rap::before {
+    background-position: right center;
+    opacity: 0.55;
   }
 
   .game-card__title {
+    font-size: 0.85rem;
+  }
+
+  .game-card__name {
     max-width: 100%;
-    font-size: clamp(1.65rem, 7.6vw, 2.25rem);
-    line-height: 1.08;
+    font-size: clamp(1.5rem, 6.7vw, 2.05rem);
+    line-height: 1.06;
   }
 
   .game-meta {

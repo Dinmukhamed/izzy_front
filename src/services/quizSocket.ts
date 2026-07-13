@@ -13,10 +13,15 @@ type AckError = {
 export type QuizSocketAck<T = unknown> = AckSuccess<T> | AckError
 
 export function createQuizSocket(): Socket {
-  return io(import.meta.env.VITE_IZZY_API_URL || 'http://127.0.0.1:4010', {
+  return io(
+    import.meta.env.VITE_IZZY_SOCKET_URL ||
+      import.meta.env.VITE_IZZY_API_URL ||
+      'http://127.0.0.1:4010',
+    {
     autoConnect: true,
     transports: ['websocket', 'polling'],
-  })
+    },
+  )
 }
 
 export function getStoredAdminToken() {
