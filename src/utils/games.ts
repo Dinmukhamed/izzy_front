@@ -1,19 +1,19 @@
 export const GAMES = [
   {
-    id: 67,
-    title: 'Ultra Music Mix#67',
-    name: 'Все эпохи и жанры',
-    shortName: 'Ultra Music Mix#67: Все эпохи и жанры',
-    date: '16 июля 2026, 19:30',
-    venue: 'Veselidze Resto Bar & Karaoke',
-    address: ' ул. Абая 143'
-  },
-  {
     id: 68,
     title: 'Ultra Music Mix#68',
     name: 'Rap & RnB Зарубежка',
     shortName: 'Ultra Music Mix#68: Rap & RnB Зарубежка',
     date: '23 июля 2026, 19:30',
+    venue: 'Veselidze Resto Bar & Karaoke',
+    address: ' ул. Абая 143'
+  },
+  {
+    id: 69,
+    title: 'Ultra Music Mix#69',
+    name: 'Без цензуры',
+    shortName: 'Ultra Music Mix#69: Без цензуры',
+    date: '25 июля 2026, 19:30',
     venue: 'Veselidze Resto Bar & Karaoke',
     address: ' ул. Абая 143'
   },

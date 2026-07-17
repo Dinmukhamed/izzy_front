@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Check, Image, Music, Plus, Save, ToggleLeft, ToggleRight, Trash2 } from 'lucide-vue-next'
+import {
+  Check,
+  FilePlus2,
+  Image,
+  ListChecks,
+  Music,
+  Plus,
+  Save,
+  Trash2,
+} from 'lucide-vue-next'
 import {
   createTemplate,
+  deleteTemplate,
+  getQuizErrorMessage,
   getTemplates,
   updateTemplate,
-  updateTemplateStatus,
   uploadQuizMedia,
 } from '@/services/quizApi'
 import { getStoredAdminToken, setStoredAdminToken } from '@/services/quizSocket'
@@ -28,12 +38,17 @@ const title = ref('')
 const status = ref<QuizTemplate['status']>('draft')
 const questions = ref<DraftQuestion[]>([createDraftQuestion()])
 const isLoading = ref(false)
+const isDeleting = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
-const selectedTemplate = computed(() => templates.value.find((template) => template.id === selectedTemplateId.value) || null)
+const selectedTemplate = computed(
+  () => templates.value.find((template) => template.id === selectedTemplateId.value) || null,
+)
 const isEditing = computed(() => Boolean(selectedTemplateId.value))
-const activeTemplates = computed(() => templates.value.filter((template) => template.status === 'active'))
+const activeTemplateCount = computed(
+  () => templates.value.filter((template) => template.status === 'active').length,
+)
 const canSave = computed(() => {
   if (!adminToken.value.trim() || !title.value.trim()) return false
 
@@ -59,24 +74,36 @@ function createDraftQuestion(): DraftQuestion {
   }
 }
 
-const loadTemplates = async () => {
+function clearMessages() {
+  errorMessage.value = ''
+  successMessage.value = ''
+}
+
+const loadTemplates = async (preferredTemplateId?: string) => {
   if (!adminToken.value.trim()) {
-    errorMessage.value = 'Enter admin token first'
+    errorMessage.value = 'Enter the admin token first'
     return
   }
 
-  errorMessage.value = ''
+  clearMessages()
   setStoredAdminToken(adminToken.value.trim())
 
   try {
     templates.value = await getTemplates(adminToken.value.trim())
-    if (!selectedTemplateId.value && templates.value[0]) selectTemplate(templates.value[0])
+    const templateToSelect =
+      templates.value.find((template) => template.id === preferredTemplateId) ||
+      templates.value.find((template) => template.id === selectedTemplateId.value) ||
+      templates.value[0]
+
+    if (templateToSelect) selectTemplate(templateToSelect)
+    else newTemplate()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Could not load templates'
+    errorMessage.value = getQuizErrorMessage(error, 'Could not load templates')
   }
 }
 
 const selectTemplate = (template: QuizTemplate) => {
+  clearMessages()
   selectedTemplateId.value = template.id
   title.value = template.title
   status.value = template.status
@@ -85,27 +112,37 @@ const selectTemplate = (template: QuizTemplate) => {
     kind: question.kind,
     mediaUrl: question.media?.url || '',
     options: question.options.map((option) => option.text),
-    correctOptionIndex: Math.max(0, question.options.findIndex((option) => option.id === question.correctOptionId)),
+    correctOptionIndex: Math.max(
+      0,
+      question.options.findIndex((option) => option.id === question.correctOptionId),
+    ),
     durationSeconds: Math.round(question.durationMs / 1000),
     points: question.points,
   }))
 }
 
+const chooseTemplate = (event: Event) => {
+  const templateId = (event.target as HTMLSelectElement).value
+  const template = templates.value.find((candidate) => candidate.id === templateId)
+
+  if (template) selectTemplate(template)
+  else newTemplate()
+}
+
 const newTemplate = () => {
+  clearMessages()
   selectedTemplateId.value = null
   title.value = ''
   status.value = 'draft'
   questions.value = [createDraftQuestion()]
-  successMessage.value = ''
-  errorMessage.value = ''
 }
 
 const saveTemplate = async () => {
   if (!canSave.value) return
 
+  const wasEditing = isEditing.value
   isLoading.value = true
-  errorMessage.value = ''
-  successMessage.value = ''
+  clearMessages()
 
   const payload: CreateQuizTemplateInput = {
     title: title.value.trim(),
@@ -118,25 +155,31 @@ const saveTemplate = async () => {
       ? await updateTemplate(selectedTemplateId.value, payload, adminToken.value.trim())
       : await createTemplate(payload, adminToken.value.trim())
 
-    await loadTemplates()
-    selectTemplate(savedTemplate)
-    successMessage.value = 'Template saved'
+    await loadTemplates(savedTemplate.id)
+    successMessage.value = wasEditing ? 'Template updated' : 'Template created'
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Could not save template'
+    errorMessage.value = getQuizErrorMessage(error, 'Could not save template')
   } finally {
     isLoading.value = false
   }
 }
 
-const toggleTemplateStatus = async (template: QuizTemplate) => {
-  const nextStatus = template.status === 'active' ? 'draft' : 'active'
+const removeTemplate = async () => {
+  if (!selectedTemplate.value) return
+  if (!window.confirm(`Delete “${selectedTemplate.value.title}”? This cannot be undone.`)) return
+
+  isDeleting.value = true
+  clearMessages()
 
   try {
-    const updatedTemplate = await updateTemplateStatus(template.id, nextStatus, adminToken.value.trim())
-    await loadTemplates()
-    if (selectedTemplateId.value === updatedTemplate.id) selectTemplate(updatedTemplate)
+    await deleteTemplate(selectedTemplate.value.id, adminToken.value.trim())
+    templates.value = templates.value.filter((template) => template.id !== selectedTemplateId.value)
+    newTemplate()
+    successMessage.value = 'Template deleted'
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Could not update status'
+    errorMessage.value = getQuizErrorMessage(error, 'Could not delete template')
+  } finally {
+    isDeleting.value = false
   }
 }
 
@@ -163,12 +206,15 @@ const uploadMedia = async (question: DraftQuestion, event: Event) => {
   const file = input.files?.[0]
   if (!file) return
 
+  clearMessages()
+
   try {
     const uploadedFile = await uploadQuizMedia(file, adminToken.value.trim())
     question.mediaUrl = uploadedFile.url
     question.kind = uploadedFile.mimetype.startsWith('audio/') ? 'audio' : 'image'
+    successMessage.value = 'Media uploaded'
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Could not upload media'
+    errorMessage.value = getQuizErrorMessage(error, 'Could not upload media')
   } finally {
     input.value = ''
   }
@@ -211,154 +257,216 @@ onMounted(() => {
             <h1>Templates</h1>
           </div>
         </div>
-        <a class="nav-link" href="/quiz/games">Games</a>
+        <a class="nav-link" href="/quiz/games">Live games</a>
       </header>
 
       <section class="token-panel">
         <label>
-          <span>Token / password</span>
-          <input v-model="adminToken" type="password" placeholder="dev-admin-token" @keyup.enter="loadTemplates" />
+          <span>Admin token</span>
+          <input
+            v-model="adminToken"
+            type="password"
+            placeholder="dev-admin-token"
+            @keyup.enter="loadTemplates()"
+          />
         </label>
-        <button type="button" @click="loadTemplates">Unlock</button>
+        <button type="button" @click="loadTemplates()">Connect</button>
       </section>
 
       <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>
       <p v-if="successMessage" class="message success">{{ successMessage }}</p>
 
-      <section class="templates-layout">
-        <aside class="panel template-list-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Saved</p>
-              <h2>{{ templates.length }} templates</h2>
-            </div>
-            <button class="icon-button" type="button" @click="newTemplate">
-              <Plus :size="20" />
-            </button>
+      <section class="workspace panel">
+        <header class="workspace-header">
+          <div>
+            <p class="eyebrow">Template library</p>
+            <h2>{{ isEditing ? 'Edit template' : 'Create template' }}</h2>
+            <p class="workspace-summary">
+              {{ templates.length }} saved · {{ activeTemplateCount }} active
+            </p>
           </div>
 
-          <div class="template-list">
+          <div class="workspace-actions">
+            <button class="secondary-button" type="button" @click="newTemplate">
+              <FilePlus2 :size="19" />
+              New
+            </button>
             <button
-              v-for="template in templates"
-              :key="template.id"
+              v-if="isEditing"
+              class="danger-button"
               type="button"
-              class="template-card"
-              :class="{ selected: template.id === selectedTemplateId }"
-              @click="selectTemplate(template)"
+              :disabled="isDeleting"
+              @click="removeTemplate"
             >
-              <span :class="['status-dot', template.status]" />
-              <strong>{{ template.title }}</strong>
-              <small>{{ template.questions.length }} questions</small>
-              <button class="status-button" type="button" @click.stop="toggleTemplateStatus(template)">
-                <ToggleRight v-if="template.status === 'active'" :size="22" />
-                <ToggleLeft v-else :size="22" />
-                {{ template.status === 'active' ? 'Active' : 'Inactive' }}
-              </button>
+              <Trash2 :size="18" />
+              {{ isDeleting ? 'Deleting...' : 'Delete' }}
             </button>
-          </div>
-
-          <div class="template-summary">
-            <Check :size="22" />
-            {{ activeTemplates.length }} active templates available for games
-          </div>
-        </aside>
-
-        <article class="panel editor-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">{{ isEditing ? 'Edit' : 'Create' }}</p>
-              <h2>{{ isEditing ? selectedTemplate?.title : 'New template' }}</h2>
-            </div>
-            <button class="save-button" type="button" :disabled="!canSave || isLoading" @click="saveTemplate">
-              <Save :size="20" />
+            <button
+              class="save-button"
+              type="button"
+              :disabled="!canSave || isLoading"
+              @click="saveTemplate"
+            >
+              <Save :size="19" />
               {{ isLoading ? 'Saving...' : 'Save' }}
             </button>
           </div>
+        </header>
 
-          <div class="form-grid">
-            <label>
-              <span>Template name</span>
-              <input v-model="title" type="text" placeholder="Ultra Music Mix #68" />
-            </label>
-            <label>
-              <span>Status</span>
-              <select v-model="status">
-                <option value="draft">Inactive</option>
-                <option value="active">Active</option>
-                <option value="archived">Archived</option>
-              </select>
-            </label>
+        <div class="template-picker">
+          <label>
+            <span>Choose saved template</span>
+            <select :value="selectedTemplateId || ''" @change="chooseTemplate">
+              <option value="">New template</option>
+              <option v-for="template in templates" :key="template.id" :value="template.id">
+                {{ template.title }} · {{ template.questions.length }} questions · {{ template.status }}
+              </option>
+            </select>
+          </label>
+          <div class="current-template-state" :class="status">
+            <Check v-if="status === 'active'" :size="18" />
+            <ListChecks v-else :size="18" />
+            {{ status }}
           </div>
+        </div>
 
-          <section class="questions-list">
-            <article v-for="(question, questionIndex) in questions" :key="questionIndex" class="question-editor">
-              <div class="question-head">
-                <strong>Question {{ questionIndex + 1 }}</strong>
-                <button type="button" :disabled="questions.length === 1" @click="removeQuestion(questionIndex)">
-                  <Trash2 :size="18" />
-                </button>
+        <div class="form-grid template-fields">
+          <label>
+            <span>Template name</span>
+            <input v-model="title" type="text" placeholder="Ultra Music Mix #68" />
+          </label>
+          <label>
+            <span>Status</span>
+            <select v-model="status">
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Content</p>
+            <h3>{{ questions.length }} {{ questions.length === 1 ? 'question' : 'questions' }}</h3>
+          </div>
+          <button class="secondary-button" type="button" @click="addQuestion">
+            <Plus :size="18" />
+            Add question
+          </button>
+        </div>
+
+        <section class="questions-list">
+          <article
+            v-for="(question, questionIndex) in questions"
+            :key="questionIndex"
+            class="question-editor"
+          >
+            <div class="question-head">
+              <div class="question-number">{{ questionIndex + 1 }}</div>
+              <div class="question-heading-copy">
+                <span>Question</span>
+                <strong>{{ question.text.trim() || 'Untitled question' }}</strong>
               </div>
+              <button
+                class="icon-button danger-icon"
+                type="button"
+                :aria-label="`Delete question ${questionIndex + 1}`"
+                :disabled="questions.length === 1"
+                @click="removeQuestion(questionIndex)"
+              >
+                <Trash2 :size="18" />
+              </button>
+            </div>
 
+            <label>
+              <span>Question text</span>
+              <textarea v-model="question.text" rows="2" placeholder="What song is playing?" />
+            </label>
+
+            <div class="form-grid compact">
               <label>
-                <span>Question text</span>
-                <textarea v-model="question.text" rows="2" placeholder="What song is playing?" />
+                <span>Type</span>
+                <select v-model="question.kind">
+                  <option value="text">Text</option>
+                  <option value="image">Image</option>
+                  <option value="audio">Audio</option>
+                </select>
               </label>
+              <label>
+                <span>Seconds</span>
+                <input v-model.number="question.durationSeconds" type="number" min="5" max="120" />
+              </label>
+              <label>
+                <span>Points</span>
+                <input
+                  v-model.number="question.points"
+                  type="number"
+                  min="100"
+                  max="5000"
+                  step="100"
+                />
+              </label>
+            </div>
 
-              <div class="form-grid compact">
-                <label>
-                  <span>Type</span>
-                  <select v-model="question.kind">
-                    <option value="text">Text</option>
-                    <option value="image">Image</option>
-                    <option value="audio">Audio</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Seconds</span>
-                  <input v-model.number="question.durationSeconds" type="number" min="5" max="120" />
-                </label>
-                <label>
-                  <span>Points</span>
-                  <input v-model.number="question.points" type="number" min="100" max="5000" step="100" />
-                </label>
-              </div>
+            <div class="media-row">
+              <label class="upload-button">
+                <Image v-if="question.kind !== 'audio'" :size="18" />
+                <Music v-else :size="18" />
+                Upload media
+                <input type="file" accept="image/*,audio/*" @change="uploadMedia(question, $event)" />
+              </label>
+              <input
+                v-model="question.mediaUrl"
+                type="text"
+                placeholder="Uploaded or external media URL"
+              />
+            </div>
 
-              <div class="media-row">
-                <label class="upload-button">
-                  <Image v-if="question.kind !== 'audio'" :size="18" />
-                  <Music v-else :size="18" />
-                  Upload media
-                  <input type="file" accept="image/*,audio/*" @change="uploadMedia(question, $event)" />
-                </label>
-                <input v-model="question.mediaUrl" type="text" placeholder="Media URL after upload, or external URL" />
-              </div>
-
-              <div class="option-list">
-                <div v-for="(_, optionIndex) in question.options" :key="optionIndex" class="option-row">
+            <div class="option-list">
+              <p class="field-label">Answers · select the correct one</p>
+              <div v-for="(_, optionIndex) in question.options" :key="optionIndex" class="option-row">
+                <label class="correct-answer" :title="`Mark answer ${optionIndex + 1} as correct`">
                   <input
                     v-model="question.correctOptionIndex"
                     type="radio"
                     :name="`correct-${questionIndex}`"
                     :value="optionIndex"
                   />
-                  <input v-model="question.options[optionIndex]" type="text" :placeholder="`Answer ${optionIndex + 1}`" />
-                  <button type="button" :disabled="question.options.length <= 2" @click="removeOption(question, optionIndex)">
-                    <Trash2 :size="16" />
-                  </button>
-                </div>
-                <button class="ghost-button small" type="button" :disabled="question.options.length >= 8" @click="addOption(question)">
-                  <Plus :size="18" />
-                  Add answer
+                  <span>{{ optionIndex + 1 }}</span>
+                </label>
+                <input
+                  v-model="question.options[optionIndex]"
+                  type="text"
+                  :placeholder="`Answer ${optionIndex + 1}`"
+                />
+                <button
+                  class="icon-button"
+                  type="button"
+                  :aria-label="`Delete answer ${optionIndex + 1}`"
+                  :disabled="question.options.length <= 2"
+                  @click="removeOption(question, optionIndex)"
+                >
+                  <Trash2 :size="16" />
                 </button>
               </div>
-            </article>
-          </section>
+              <button
+                class="secondary-button small"
+                type="button"
+                :disabled="question.options.length >= 8"
+                @click="addOption(question)"
+              >
+                <Plus :size="17" />
+                Add answer
+              </button>
+            </div>
+          </article>
+        </section>
 
-          <button class="add-question-button" type="button" @click="addQuestion">
-            <Plus :size="20" />
-            Add question
-          </button>
-        </article>
+        <button class="add-question-button" type="button" @click="addQuestion">
+          <Plus :size="20" />
+          Add another question
+        </button>
       </section>
     </section>
   </main>
@@ -367,31 +475,36 @@ onMounted(() => {
 <style scoped>
 .quiz-admin-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #070b1d, #132640 58%, #231038);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(103, 232, 249, 0.12), transparent 28%),
+    linear-gradient(135deg, #070b1d, #132640 58%, #231038);
   color: white;
   padding: clamp(16px, 3vw, 36px);
 }
 
 .quiz-shell {
-  width: min(100%, 1360px);
+  width: min(100%, 1180px);
   margin: 0 auto;
 }
 
 .topbar,
 .brand,
-.token-panel,
-.panel-head,
-.template-card,
-.status-button,
+.workspace-header,
+.workspace-actions,
+.template-picker,
+.section-heading,
 .question-head,
 .media-row,
 .option-row,
 .save-button,
+.secondary-button,
+.danger-button,
 .icon-button,
-.ghost-button,
-.add-question-button,
 .nav-link,
-.template-summary {
+.current-template-state,
+.upload-button,
+.add-question-button,
+.correct-answer {
   display: flex;
   align-items: center;
 }
@@ -416,17 +529,18 @@ onMounted(() => {
 
 .brand p,
 .eyebrow,
-label span {
+label > span,
+.field-label,
+.question-heading-copy span {
   color: #67e8f9;
   font-size: 12px;
-  font-weight: 950;
-  letter-spacing: 0.22em;
+  font-weight: 900;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
-.brand h1,
-.panel-head h2 {
-  font-size: clamp(32px, 4vw, 58px);
+.brand h1 {
+  font-size: clamp(34px, 5vw, 64px);
   line-height: 0.95;
   font-weight: 950;
   text-transform: uppercase;
@@ -436,7 +550,7 @@ label span {
 .token-panel,
 .panel {
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(11, 17, 40, 0.82);
+  background: rgba(11, 17, 40, 0.88);
   box-shadow: 0 26px 80px rgba(0, 0, 0, 0.26);
 }
 
@@ -446,7 +560,7 @@ label span {
   border-radius: 14px;
   padding: 0 18px;
   color: white;
-  font-weight: 950;
+  font-weight: 900;
   text-transform: uppercase;
 }
 
@@ -454,9 +568,9 @@ label span {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
-  border-radius: 22px;
-  padding: 16px;
-  margin-bottom: 18px;
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 16px;
 }
 
 label {
@@ -470,30 +584,54 @@ select {
   width: 100%;
   min-height: 50px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  background: rgba(7, 11, 29, 0.82);
+  border-radius: 13px;
+  background: rgba(7, 11, 29, 0.92);
   padding: 0 14px;
   color: white;
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 750;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: rgba(103, 232, 249, 0.8);
+  box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.12);
 }
 
 textarea {
-  min-height: 82px;
-  padding-top: 12px;
+  min-height: 86px;
+  padding-top: 13px;
   resize: vertical;
+}
+
+button,
+.nav-link,
+.upload-button {
+  line-height: 1;
+}
+
+button :deep(svg),
+.nav-link :deep(svg),
+.upload-button :deep(svg) {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .token-panel button,
 .save-button,
-.ghost-button,
+.secondary-button,
+.danger-button,
 .add-question-button {
-  min-height: 50px;
+  min-height: 48px;
   justify-content: center;
-  gap: 10px;
-  border-radius: 14px;
-  font-weight: 950;
-  letter-spacing: 0.08em;
+  gap: 9px;
+  border-radius: 13px;
+  padding: 0 16px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -502,170 +640,199 @@ textarea {
 .add-question-button {
   background: #67e8f9;
   color: #061022;
-  padding: 0 18px;
+}
+
+.secondary-button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.secondary-button.small {
+  width: fit-content;
+  min-height: 42px;
+  font-size: 12px;
+}
+
+.danger-button {
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.42;
 }
 
-.templates-layout {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.panel {
+.workspace {
   border-radius: 24px;
-  padding: clamp(20px, 3vw, 30px);
+  padding: clamp(20px, 3vw, 34px);
 }
 
-.template-list-panel {
-  position: sticky;
-  top: 18px;
-}
-
-.panel-head {
+.workspace-header {
   justify-content: space-between;
-  gap: 14px;
+  gap: 22px;
 }
 
-.icon-button,
-.question-head button,
-.option-row button {
-  width: 44px;
-  height: 44px;
-  justify-content: center;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
+.workspace-header h2 {
+  margin-top: 5px;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1;
+  font-weight: 950;
 }
 
-.template-list {
-  display: grid;
+.workspace-summary {
+  margin-top: 9px;
+  color: #94a3b8;
+  font-weight: 750;
+}
+
+.workspace-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
-  margin-top: 18px;
 }
 
-.template-card {
+.template-picker {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr);
-  gap: 8px 12px;
-  align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 14px;
-  color: white;
-  text-align: left;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  margin-top: 28px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 16px;
 }
 
-.template-card.selected {
-  border-color: rgba(103, 232, 249, 0.6);
-  background: rgba(103, 232, 249, 0.1);
-}
-
-.template-card strong,
-.template-card small,
-.status-button {
-  grid-column: 2;
-}
-
-.template-card strong {
-  font-size: 17px;
-  font-weight: 950;
-}
-
-.template-card small {
-  color: #cbd5e1;
-  font-weight: 800;
-}
-
-.status-dot {
-  width: 12px;
-  height: 12px;
-  grid-row: 1 / span 3;
-  border-radius: 999px;
-  background: #94a3b8;
-}
-
-.status-dot.active {
-  background: #4ade80;
-}
-
-.status-dot.archived {
-  background: #fb7185;
-}
-
-.status-button {
-  justify-content: flex-start;
+.current-template-state {
+  min-width: 128px;
+  align-self: end;
+  min-height: 50px;
+  justify-content: center;
   gap: 8px;
-  color: #67e8f9;
+  border-radius: 13px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 900;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.template-summary {
-  gap: 10px;
-  margin-top: 18px;
-  color: #cbd5e1;
-  font-weight: 850;
+.current-template-state.active {
+  background: rgba(74, 222, 128, 0.12);
+  color: #bbf7d0;
+}
+
+.current-template-state.archived {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
   gap: 14px;
+}
+
+.template-fields {
+  grid-template-columns: minmax(0, 1fr) 220px;
   margin-top: 22px;
 }
 
 .form-grid.compact {
-  grid-template-columns: 180px 140px 140px;
-  margin-top: 0;
+  grid-template-columns: minmax(180px, 1fr) 140px 160px;
+}
+
+.section-heading {
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 34px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section-heading h3 {
+  margin-top: 5px;
+  font-size: 26px;
+  font-weight: 950;
 }
 
 .questions-list {
   display: grid;
-  gap: 16px;
-  margin-top: 20px;
+  gap: 18px;
+  margin-top: 18px;
 }
 
 .question-editor {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  padding: clamp(16px, 2.5vw, 24px);
 }
 
 .question-head {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 44px;
+  gap: 12px;
 }
 
-.question-head strong {
+.question-number {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 14px;
+  background: #67e8f9;
+  color: #061022;
   font-size: 20px;
   font-weight: 950;
 }
 
+.question-heading-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.question-heading-copy strong {
+  overflow: hidden;
+  color: white;
+  font-size: 19px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button {
+  width: 44px;
+  height: 44px;
+  justify-content: center;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+.danger-icon {
+  color: #fca5a5;
+}
+
 .media-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
 }
 
 .upload-button {
   min-height: 50px;
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 14px;
+  border-radius: 13px;
   background: white;
   color: #061022;
-  padding: 0 14px;
-  font-weight: 950;
+  padding: 0 15px;
+  font-weight: 900;
   white-space: nowrap;
 }
 
@@ -678,22 +845,53 @@ button:disabled {
   gap: 10px;
 }
 
+.field-label {
+  margin-bottom: 2px;
+}
+
 .option-row {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) 44px;
   gap: 10px;
 }
 
-.option-row input[type='radio'] {
-  width: 22px;
-  min-height: 22px;
-  accent-color: #67e8f9;
+.correct-answer {
+  display: grid;
+  width: 50px;
+  min-height: 50px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 13px;
+  background: rgba(7, 11, 29, 0.92);
+  cursor: pointer;
 }
 
-.ghost-button {
-  width: fit-content;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+.correct-answer input {
+  position: absolute;
+  width: 1px;
+  min-height: 1px;
+  opacity: 0;
+}
+
+.correct-answer span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
   background: rgba(255, 255, 255, 0.08);
-  color: white;
-  padding: 0 14px;
+  color: #cbd5e1;
+  font-weight: 950;
+}
+
+.correct-answer:has(input:checked) {
+  border-color: rgba(74, 222, 128, 0.7);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.correct-answer:has(input:checked) span {
+  background: #4ade80;
+  color: #052e16;
 }
 
 .add-question-button {
@@ -705,7 +903,7 @@ button:disabled {
   border-radius: 14px;
   padding: 12px 14px;
   margin-bottom: 14px;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .message.error {
@@ -718,21 +916,51 @@ button:disabled {
   color: #bbf7d0;
 }
 
-@media (max-width: 1020px) {
-  .templates-layout,
-  .token-panel,
-  .form-grid,
-  .form-grid.compact {
+@media (max-width: 760px) {
+  .topbar,
+  .workspace-header,
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .template-picker,
+  .template-fields,
+  .form-grid.compact,
+  .media-row {
     grid-template-columns: 1fr;
   }
 
-  .template-list-panel {
-    position: static;
+  .current-template-state {
+    align-self: stretch;
   }
 
-  .media-row {
-    align-items: stretch;
-    flex-direction: column;
+  .token-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .nav-link {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .workspace-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .option-row {
+    grid-template-columns: 46px minmax(0, 1fr) 42px;
+    gap: 7px;
+  }
+
+  .correct-answer {
+    width: 46px;
   }
 }
 </style>

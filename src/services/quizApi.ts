@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getQuizApiUrl } from '@/services/quizConfig'
 import type {
   CreateQuizTemplateInput,
   CreateSessionResponse,
@@ -9,7 +10,7 @@ import type {
 } from '@/types/quiz'
 
 const quizApi = axios.create({
-  baseURL: import.meta.env.VITE_IZZY_API_URL || 'http://127.0.0.1:4010',
+  baseURL: getQuizApiUrl(),
 })
 
 const adminHeaders = (token: string) => ({
@@ -48,6 +49,25 @@ export async function updateTemplateStatus(id: string, status: QuizTemplate['sta
   )
 
   return data
+}
+
+export async function deleteTemplate(id: string, token: string) {
+  await quizApi.delete(`/admin/templates/${id}`, {
+    headers: adminHeaders(token),
+  })
+}
+
+export function getQuizErrorMessage(error: unknown, fallback: string) {
+  if (!axios.isAxiosError(error)) return error instanceof Error ? error.message : fallback
+
+  const apiMessage = error.response?.data?.error
+  if (typeof apiMessage === 'string') return apiMessage
+  if (error.response?.status === 401) return 'The admin token is incorrect'
+  if (error.code === 'ERR_NETWORK') {
+    return `Cannot reach the quiz API at ${getQuizApiUrl()}. Check that the API is running.`
+  }
+
+  return fallback
 }
 
 export async function uploadQuizMedia(file: File, token: string) {
