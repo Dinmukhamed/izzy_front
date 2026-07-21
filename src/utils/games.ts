@@ -5,10 +5,10 @@ export const GAMES = [
     name: 'Rap & RnB Зарубежка',
     shortName: 'Ultra Music Mix#68: Rap & RnB Зарубежка',
     date: '23 июля 2026, 19:30',
-    venue: 'Veselidze Resto Bar & Karaoke',
-    address: ' ул. Абая 143'
+    venue: 'Maroon',
+    address: ' ул. Жамбыла, 154'
   },
-  {
+  /*{
     id: 69,
     title: 'Ultra Music Mix#69',
     name: 'Без цензуры',
@@ -16,7 +16,7 @@ export const GAMES = [
     date: '25 июля 2026, 19:30',
     venue: 'Veselidze Resto Bar & Karaoke',
     address: ' ул. Абая 143'
-  },
+  },*/
 ]
 
 const monthMap: Record<string, number> = {
