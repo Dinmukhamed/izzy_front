@@ -1,22 +1,22 @@
 export const GAMES = [
   {
-    id: 68,
+    id: 1,
     title: 'Ultra Music Mix#68',
-    name: 'Rap & RnB Зарубежка',
-    shortName: 'Ultra Music Mix#68: Rap & RnB Зарубежка',
-    date: '23 июля 2026, 19:30',
+    name: 'Все эпохи и жанры',
+    shortName: 'Ultra Music Mix#68: Все эпохи и жанры',
+    date: '30 июля 2026, 19:30',
     venue: 'Maroon',
     address: ' ул. Жамбыла, 154'
   },
-  /*{
+  {
     id: 69,
     title: 'Ultra Music Mix#69',
-    name: 'Без цензуры',
-    shortName: 'Ultra Music Mix#69: Без цензуры',
-    date: '25 июля 2026, 19:30',
-    venue: 'Veselidze Resto Bar & Karaoke',
-    address: ' ул. Абая 143'
-  },*/
+    name: 'Rock',
+    shortName: 'Ultra Music Mix#69: Rock',
+    date: '1 августа 2026, 18:00',
+    venue: 'Sintra',
+    address: ' БЦ Almaty Towers, ул. Байзакова 280'
+  },
 ]
 
 const monthMap: Record<string, number> = {
