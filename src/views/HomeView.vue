@@ -240,6 +240,10 @@ const availableGames = computed(() => {
 
 const featuredGame = computed(() => availableGames.value[0] || null)
 
+function formatGameDate(date: string) {
+  return date.replace(/\s+\d{4}(?=,)/, '')
+}
+
 const scheduleClass = computed(() => {
   if (availableGames.value.length === 1) return 'schedule-list schedule-list--single'
   if (availableGames.value.length === 2) return 'schedule-list schedule-list--two'
@@ -373,7 +377,7 @@ function getGameClass(id: number) {
           <div class="mt-7 space-y-4">
             <div class="event-row">
               <CalendarDays class="h-5 w-5 text-fuchsia-300" />
-              <span>{{ featuredGame.date }}</span>
+              <span>{{ formatGameDate(featuredGame.date) }}</span>
             </div>
             <div class="event-row">
               <MapPin class="h-5 w-5 text-cyan-300" />
@@ -420,7 +424,7 @@ function getGameClass(id: number) {
             >
               <div class="game-card__shade"></div>
               <div class="game-card__content">
-                <div>
+                <div class="game-card__intro">
                   <div class="mb-5 inline-flex items-center gap-2 bg-black/35 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white backdrop-blur">
                     <CheckCircle2 class="h-4 w-4 text-emerald-300" />
                     Открыта запись
@@ -439,7 +443,7 @@ function getGameClass(id: number) {
                   <div class="game-card__details">
                     <div class="game-meta">
                       <CalendarDays class="h-5 w-5" />
-                      <span>{{ game.date }}</span>
+                      <span>{{ formatGameDate(game.date) }}</span>
                     </div>
                     <div class="game-meta">
                       <MapPin class="h-5 w-5" />
@@ -888,7 +892,8 @@ function getGameClass(id: number) {
 
 @media (min-width: 1024px) {
   .schedule-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px;
   }
 
   .schedule-list--single {
@@ -897,9 +902,8 @@ function getGameClass(id: number) {
   }
 
   .schedule-list--two {
-    grid-template-columns: repeat(2, minmax(0, 560px));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: center;
-    gap: 28px;
   }
 }
 
@@ -949,11 +953,21 @@ function getGameClass(id: number) {
 .game-card__content {
   position: relative;
   z-index: 10;
-  display: flex;
-  min-height: 326px;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 30px;
+  display: grid;
+  height: 100%;
+  min-height: 400px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 30px;
+  padding: 34px;
+}
+
+.game-card__intro {
+  display: grid;
+  align-content: start;
+}
+
+.game-card__intro > :first-child {
+  justify-self: start;
 }
 
 .game-card__heading {
@@ -971,9 +985,10 @@ function getGameClass(id: number) {
 }
 
 .game-card__name {
+  min-height: 2.08em;
   max-width: 100%;
   color: white;
-  font-size: clamp(1.75rem, 2.45vw, 2.32rem);
+  font-size: clamp(1.9rem, 2.8vw, 2.65rem);
   font-weight: 900;
   line-height: 1.04;
   text-wrap: balance;
@@ -981,16 +996,44 @@ function getGameClass(id: number) {
 
 .game-card__footer {
   display: grid;
-  gap: 22px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 24px;
 }
 
 .game-card__details {
   display: grid;
-  gap: 14px;
+  grid-template-rows: auto minmax(4.1em, auto);
+  align-content: start;
+  gap: 10px;
 }
 
 .game-meta {
+  min-width: 0;
+  align-items: center;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
   color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: clamp(1.02rem, 1.35vw, 1.12rem);
+  line-height: 1.4;
+  backdrop-filter: blur(10px);
+}
+
+.game-meta svg {
+  box-sizing: content-box;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 9px;
+  padding: 7px;
+  color: #67e8f9;
+  background: rgba(34, 211, 238, 0.14);
+}
+
+.game-meta:nth-child(2) svg {
+  color: #f0abfc;
+  background: rgba(217, 70, 239, 0.14);
 }
 
 .game-card__action {
@@ -1019,7 +1062,7 @@ function getGameClass(id: number) {
 
 @media (min-width: 1024px) {
   .schedule-list--single .game-card__content {
-    min-height: 300px;
+    min-height: 360px;
     padding: 34px;
   }
 
@@ -1033,21 +1076,6 @@ function getGameClass(id: number) {
     align-items: end;
   }
 
-  .schedule-list--two .game-card__content {
-    min-height: 330px;
-    padding: 34px;
-  }
-
-  .schedule-list--two .game-card__name {
-    font-size: clamp(2rem, 2.55vw, 2.7rem);
-    line-height: 1.02;
-  }
-
-  .schedule-list--two .game-card__footer {
-    grid-template-columns: minmax(0, 1fr) 220px;
-    align-items: end;
-    gap: 24px;
-  }
 }
 
 .empty-schedule,
@@ -1206,6 +1234,7 @@ function getGameClass(id: number) {
 
   .game-card__content {
     min-height: 300px;
+    gap: 22px;
     padding: 24px;
   }
 
@@ -1219,18 +1248,25 @@ function getGameClass(id: number) {
   }
 
   .game-card__name {
+    min-height: auto;
     max-width: 100%;
     font-size: clamp(1.5rem, 6.7vw, 2.05rem);
     line-height: 1.06;
   }
 
   .game-meta {
-    font-size: 1rem;
+    padding: 10px 11px;
+    font-size: 1.02rem;
     line-height: 1.45;
   }
 
   .game-card__footer {
+    grid-template-rows: auto auto;
     gap: 18px;
+  }
+
+  .game-card__details {
+    grid-template-rows: auto auto;
   }
 
   .empty-schedule,
