@@ -31,7 +31,7 @@ export const GAMES = [
     title: 'Ultra Music Mix#71',
     name: 'Rap vs Rock',
     shortName: 'Ultra Music Mix#71: Rap vs Rock',
-    date: '8 августа 2026, 18:00',
+    date: '8 августа 2026, 18:30',
     venue: 'Sintra',
     address: ' БЦ Almaty Towers, ул. Байзакова 280'
   },
@@ -44,7 +44,7 @@ export const GAMES = [
     venue: 'Maroon',
     address: ' ул. Жамбыла, 154'
   },
-  {
+  /*
     id: 73,
     title: 'Izzy Mix#2',
     name: 'Зарубежный Рок Типо Лайт',
@@ -52,7 +52,7 @@ export const GAMES = [
     date: '16 августа 2026, 18:00',
     venue: 'Sintra',
     address: ' БЦ Almaty Towers, ул. Байзакова 280'
-  },
+  }, */
   {
     id: 74,
     title: 'Ultra Music Mix#73',
