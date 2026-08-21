@@ -1,67 +1,14 @@
 export const GAMES = [
   {
-    id: 1,
-    title: 'Ultra Music Mix#68',
-    name: 'Все эпохи и жанры',
-    shortName: 'Ultra Music Mix#68: Все эпохи и жанры',
-    date: '30 июля 2026, 19:30',
-    venue: 'Maroon',
-    address: ' ул. Жамбыла, 154'
-  },
-  {
-    id: 69,
-    title: 'Ultra Music Mix#69',
-    name: 'Rock',
-    shortName: 'Ultra Music Mix#69: Rock',
-    date: '1 августа 2026, 18:00',
-    venue: 'Sintra',
-    address: ' БЦ Almaty Towers, ул. Байзакова 280'
-  },
-  {
-    id: 70,
-    title: 'Ultra Music Mix#70',
-    name: '90е и 00е',
-    shortName: 'Ultra Music Mix#70: 90е и 00е',
-    date: '6 августа 2026, 19:30',
-    venue: 'Maroon',
-    address: ' ул. Жамбыла, 154'
-  },
-  {
-    id: 71,
-    title: 'Ultra Music Mix#71',
-    name: 'Rap vs Rock',
-    shortName: 'Ultra Music Mix#71: Rap vs Rock',
-    date: '8 августа 2026, 18:30',
-    venue: 'Sintra',
-    address: ' БЦ Almaty Towers, ул. Байзакова 280'
-  },
-  {
-    id: 72,
-    title: 'Ultra Music Mix#72',
-    name: 'Rap & RnB Зарубежное',
-    shortName: 'Ultra Music Mix#72: Rap & RnB Зарубежное',
-    date: '13 августа 2026, 19:30',
+    id: 75,
+    title: 'Ultra Music Mix#74',
+    name: 'Rap & RnB: Зарубежное',
+    shortName: 'Ultra Music Mix#74: Rap & RnB: Зарубежное',
+    date: '27 августа 2026, 19:30',
     venue: 'Maroon',
     address: ' ул. Жамбыла, 154'
   },
   /*
-    id: 73,
-    title: 'Izzy Mix#2',
-    name: 'Зарубежный Рок Типо Лайт',
-    shortName: 'Izzy Mix#2: Зарубежный Рок Типо Лайт',
-    date: '16 августа 2026, 18:00',
-    venue: 'Sintra',
-    address: ' БЦ Almaty Towers, ул. Байзакова 280'
-  }, */
-  {
-    id: 74,
-    title: 'Ultra Music Mix#73',
-    name: 'Зарубежная Музыка',
-    shortName: 'Ultra Music Mix#73: Зарубежная Музыка',
-    date: '20 августа 2026, 19:30',
-    venue: 'Maroon',
-    address: ' ул. Жамбыла, 154'
-  },/*
   {
     id: 75,
     title: 'Ultra Music Mix#74',
