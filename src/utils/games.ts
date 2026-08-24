@@ -8,6 +8,15 @@ export const GAMES = [
     venue: 'Maroon',
     address: ' ул. Жамбыла, 154'
   },
+  {
+    id: 2,
+    title: 'Izzy Mix#2',
+    name: 'Кино, сериалы, мультики',
+    shortName: 'Izzy Mix#2: Кино, сериалы, мультики',
+    date: '28 августа 2026, 19:30',
+    venue: 'Sintra',
+    address: ' ул. Байзакова, 280'
+  },
   /*
   {
     id: 75,
