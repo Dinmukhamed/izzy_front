@@ -1,4 +1,5 @@
 export const GAMES = [
+  /*
   {
     id: 75,
     title: 'Ultra Music Mix#74',
@@ -17,7 +18,6 @@ export const GAMES = [
     venue: 'Sintra',
     address: ' ул. Байзакова, 280'
   },
-  /*
   {
     id: 75,
     title: 'Ultra Music Mix#74',
