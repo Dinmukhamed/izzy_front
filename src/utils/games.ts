@@ -1,23 +1,23 @@
 export const GAMES = [
-  /*
   {
-    id: 75,
+    id: 74,
     title: 'Ultra Music Mix#74',
-    name: 'Rap & RnB: Зарубежное',
-    shortName: 'Ultra Music Mix#74: Rap & RnB: Зарубежное',
-    date: '27 августа 2026, 19:30',
+    name: 'Все эпохи и жанры',
+    shortName: 'Ultra Music Mix#74: Все эпохи и жанры',
+    date: '3 сентября 2026, 19:30',
     venue: 'Maroon',
     address: ' ул. Жамбыла, 154'
   },
   {
-    id: 2,
-    title: 'Izzy Mix#2',
-    name: 'Кино, сериалы, мультики',
-    shortName: 'Izzy Mix#2: Кино, сериалы, мультики',
-    date: '28 августа 2026, 19:30',
+    id: 75,
+    title: 'Ultra Music Mix#75',
+    name: 'Rap & RnB: Зарубежное',
+    shortName: 'Ultra Music Mix#75: Rap & RnB: Зарубежное',
+    date: '4 сентября 2026, 19:30',
     venue: 'Sintra',
     address: ' ул. Байзакова, 280'
   },
+  /*
   {
     id: 75,
     title: 'Ultra Music Mix#74',
