@@ -1,18 +1,18 @@
 export const GAMES = [
   {
     id: 76,
-    title: 'Ultra Music Mix#75',
+    title: 'Ultra Music Mix#76',
     name: 'Музыка 18 + | Без цензуры и пошлое',
-    shortName: 'Ultra Music Mix#75: Музыка 18 + | Без цензуры и пошлое',
+    shortName: 'Ultra Music Mix#76: Музыка 18 + | Без цензуры и пошлое',
     date: '10 сентября 2026, 19:30',
     venue: 'Maroon',
     address: ' ул. Жамбыла, 154'
   },
   {
     id: 77,
-    title: 'Ultra Music Mix#76',
+    title: 'Ultra Music Mix#77',
     name: 'Rock',
-    shortName: 'Ultra Music Mix#76: Rock',
+    shortName: 'Ultra Music Mix#77: Rock',
     date: '11 сентября 2026, 19:30',
     venue: 'Sintra',
     address: ' ул. Байзакова, 280'
