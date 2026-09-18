@@ -18,6 +18,15 @@ export const GAMES = [
     address: ' ул. Байзакова, 280'
   },
   {
+    id: 3,
+    title: 'Izzy Mix#3',
+    name: 'Зарубежный Рок',
+    shortName: 'Izzy Mix#3: Зарубежный Рок',
+    date: '25 сентября 2026, 19:30',
+    venue: 'Sintra',
+    address: ' ул. Байзакова, 280'
+  },
+  /*{
     id: 79,
     title: 'Ultra Music Mix#79',
     name: '90е и 00е',
