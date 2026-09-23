@@ -1,7 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
-import MusicView from '@/views/MusicView.vue'
-import MovieView from '@/views/MovieView.vue'
 import RanksView from '@/views/RanksView.vue'
 import RandomizerView from '@/views/RandomizerView.vue'
 import QuizGamesView from '@/views/QuizGamesView.vue'
@@ -10,6 +8,8 @@ import QuizHostView from '@/views/QuizHostView.vue'
 import QuizControlView from '@/views/QuizControlView.vue'
 import QuizJoinView from '@/views/QuizJoinView.vue'
 import QuizPlayerView from '@/views/QuizPlayerView.vue'
+
+const telegramOnly = () => ('Telegram' in window ? true : { name: 'home' })
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -22,12 +22,14 @@ const router = createRouter({
     {
       path: '/music',
       name: 'music',
-      component: MusicView,
+      component: () => import('@/views/MusicView.vue'),
+      beforeEnter: telegramOnly,
     },
     {
       path: '/movies',
       name: 'movies',
-      component: MovieView,
+      component: () => import('@/views/MovieView.vue'),
+      beforeEnter: telegramOnly,
     },
     {
       path: '/rank',

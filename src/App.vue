@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import { onMounted } from 'vue'
-import { useWebAppTheme } from 'vue-tg'
 
 const applyDarkMode = () => {
-  const prefersDark = useWebAppTheme().colorScheme.value === 'dark'
+  const telegram = (window as Window & {
+    Telegram?: { WebApp?: { colorScheme?: string } }
+  }).Telegram
+  const prefersDark = telegram?.WebApp?.colorScheme
+    ? telegram.WebApp.colorScheme === 'dark'
+    : window.matchMedia('(prefers-color-scheme: dark)').matches
   const html = document.documentElement;
 
   if (prefersDark) {
