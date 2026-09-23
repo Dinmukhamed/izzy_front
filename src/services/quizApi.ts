@@ -6,6 +6,7 @@ import type {
   HostQuizState,
   JoinQuizResponse,
   PlayerQuizState,
+  QuizSessionSummary,
   QuizTemplate,
 } from '@/types/quiz'
 
@@ -61,6 +62,10 @@ export function getQuizErrorMessage(error: unknown, fallback: string) {
   if (!axios.isAxiosError(error)) return error instanceof Error ? error.message : fallback
 
   const apiMessage = error.response?.data?.error
+  const validationDetails = error.response?.data?.details
+  if (Array.isArray(validationDetails) && typeof validationDetails[0]?.message === 'string') {
+    return validationDetails[0].message
+  }
   if (typeof apiMessage === 'string') return apiMessage
   if (error.response?.status === 401) return 'The admin token is incorrect'
   if (error.code === 'ERR_NETWORK') {
@@ -91,6 +96,14 @@ export async function createSession(templateId: string, token: string) {
     { templateId },
     { headers: adminHeaders(token) },
   )
+
+  return data
+}
+
+export async function getSessions(token: string) {
+  const { data } = await quizApi.get<QuizSessionSummary[]>('/admin/sessions', {
+    headers: adminHeaders(token),
+  })
 
   return data
 }

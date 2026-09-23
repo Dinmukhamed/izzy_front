@@ -2,9 +2,12 @@ export type QuizStatus =
   | 'lobby_open'
   | 'lobby_locked'
   | 'in_progress'
+  | 'countdown'
   | 'question_open'
   | 'question_closed'
   | 'show_answer'
+  | 'leaderboard'
+  | 'paused'
   | 'finished'
 
 export type QuizPlayer = {
@@ -55,12 +58,17 @@ export type QuizAnswer = {
 
 export type PlayerQuizState = {
   code: string
+  templateTitle: string
   status: QuizStatus
   players: QuizPlayer[]
   currentQuestion: QuizQuestion | null
   currentQuestionIndex: number | null
   questionCount: number
   questionStartedAt: string | null
+  phaseEndsAt: string | null
+  serverNow: string
+  stateVersion: number
+  answeredPlayerIds: string[]
   answers: Array<Pick<QuizAnswer, 'id' | 'playerId' | 'questionId' | 'optionId' | 'isCorrect' | 'score' | 'elapsedMs'>>
 }
 
@@ -79,6 +87,21 @@ export type CreateSessionResponse = {
   code: string
   templateId: string
   status: QuizStatus
+}
+
+export type QuizSessionSummary = {
+  id: string
+  code: string
+  templateId: string
+  templateTitle: string
+  status: QuizStatus
+  playerCount: number
+  connectedPlayerCount: number
+  currentQuestionIndex: number | null
+  questionCount: number
+  phaseEndsAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type CreateQuizQuestionInput = {

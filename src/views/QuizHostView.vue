@@ -1,94 +1,102 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import QRCode from 'qrcode'
-import { Lock, Play, SkipForward, Square, Trophy, Unlock } from 'lucide-vue-next'
-import { getHostState } from '@/services/quizApi'
-import { createQuizSocket, getStoredAdminToken, setStoredAdminToken, type QuizSocketAck } from '@/services/quizSocket'
-import type { HostQuizState } from '@/types/quiz'
+import { Check, Clock3, Crown, Pause, Trophy, Users, WifiOff } from 'lucide-vue-next'
+import { getPlayerState } from '@/services/quizApi'
+import { createQuizSocket, type QuizSocketAck } from '@/services/quizSocket'
+import type { PlayerQuizState } from '@/types/quiz'
 
 const route = useRoute()
 const code = String(route.params.code || '').toUpperCase()
-const adminToken = ref(getStoredAdminToken())
-const state = ref<HostQuizState | null>(null)
+const state = ref<PlayerQuizState | null>(null)
 const errorMessage = ref('')
-const now = ref(Date.now())
 const qrDataUrl = ref('')
-const questionAnimationKey = ref(0)
-let clockTimer: number | undefined
+const now = ref(Date.now())
+const serverOffsetMs = ref(0)
+const isConnected = ref(false)
 const socket = createQuizSocket()
+let clockTimer: number | undefined
 
+const joinUrl = computed(() => `${window.location.origin}/quiz/join?code=${code}`)
 const sortedPlayers = computed(() =>
-  [...(state.value?.players || [])].sort((first, second) => second.score - first.score),
+  [...(state.value?.players || [])].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
 )
+const leaders = computed(() => sortedPlayers.value.slice(0, 5))
+const podium = computed(() => sortedPlayers.value.slice(0, 3))
 const currentQuestionNumber = computed(() =>
   state.value?.currentQuestionIndex === null || state.value?.currentQuestionIndex === undefined
     ? 0
     : state.value.currentQuestionIndex + 1,
 )
-const answersForCurrentQuestion = computed(() => {
-  if (!state.value?.currentQuestion) return []
-
-  return state.value.answers.filter((answer) => answer.questionId === state.value?.currentQuestion?.id)
+const remainingMs = computed(() => {
+  if (!state.value?.phaseEndsAt) return 0
+  const rawRemaining = new Date(state.value.phaseEndsAt).getTime() - (now.value + serverOffsetMs.value)
+  return Math.max(0, Math.min(rawRemaining, phaseDurationMs(state.value.status)))
 })
-const joinUrl = computed(() => `${window.location.origin}/quiz/join?code=${code}`)
-const currentQuestion = computed(() => state.value?.currentQuestion || null)
-const remainingSeconds = computed(() => {
-  if (!state.value?.questionStartedAt || !currentQuestion.value || state.value.status !== 'question_open') return 0
+const remainingSeconds = computed(() => Math.max(0, Math.ceil((remainingMs.value - 100) / 1000)))
+const countdownNumber = computed(() => Math.max(1, remainingSeconds.value))
+const timerProgress = computed(() => Math.max(0, Math.min(100, (remainingMs.value / 20_000) * 100)))
+const answeredCount = computed(() => state.value?.answeredPlayerIds.length || 0)
+const correctOption = computed(() =>
+  state.value?.currentQuestion?.options.find(
+    (option) => option.id === state.value?.currentQuestion?.correctOptionId,
+  ),
+)
+const latestPlayers = computed(() => [...(state.value?.players || [])].slice(-10).reverse())
 
-  const endsAt = new Date(state.value.questionStartedAt).getTime() + currentQuestion.value.durationMs
+function phaseDurationMs(status: PlayerQuizState['status']) {
+  if (status === 'countdown') return 3_000
+  if (status === 'question_open') return 20_000
+  if (status === 'show_answer') return 4_000
+  if (status === 'leaderboard') return 6_000
+  return Number.POSITIVE_INFINITY
+}
 
-  return Math.max(0, Math.ceil((endsAt - now.value) / 1000))
-})
-const timerProgress = computed(() => {
-  if (!currentQuestion.value || state.value?.status !== 'question_open') return 0
+function applyState(nextState: PlayerQuizState) {
+  if (state.value && nextState.stateVersion < state.value.stateVersion) return
+  state.value = nextState
+  serverOffsetMs.value = new Date(nextState.serverNow).getTime() - Date.now()
+}
 
-  return Math.max(0, Math.min(100, (remainingSeconds.value / (currentQuestion.value.durationMs / 1000)) * 100))
-})
-const isAnswerMode = computed(() => state.value?.status === 'show_answer')
-
-const connectHost = async () => {
-  if (!adminToken.value.trim()) {
-    errorMessage.value = 'Введи admin token'
-    return
-  }
-
-  errorMessage.value = ''
-  setStoredAdminToken(adminToken.value.trim())
-
+async function loadState() {
   try {
-    state.value = await getHostState(code, adminToken.value.trim())
+    applyState(await getPlayerState(code))
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не получилось открыть игру'
+    errorMessage.value = error instanceof Error ? error.message : 'Не получилось открыть экран игры'
   }
+}
 
-  socket.emit('host:join', { code, token: adminToken.value.trim() }, (response: QuizSocketAck<HostQuizState>) => {
+function joinDisplayRoom() {
+  socket.emit('display:join-room', { code }, (response: QuizSocketAck<PlayerQuizState>) => {
     if (!response.ok) {
       errorMessage.value = response.error
       return
     }
-
-    state.value = response.data
+    errorMessage.value = ''
+    applyState(response.data)
   })
 }
 
-const hostAction = (event: string) => {
-  errorMessage.value = ''
-  socket.emit(event, { code, token: adminToken.value.trim() }, (response: QuizSocketAck) => {
-    if (!response.ok) errorMessage.value = response.error
+async function generateQr() {
+  qrDataUrl.value = await QRCode.toDataURL(joinUrl.value, {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    width: 420,
+    color: { dark: '#070b1d', light: '#ffffff' },
   })
 }
 
 onMounted(() => {
-  clockTimer = window.setInterval(() => {
-    now.value = Date.now()
-  }, 250)
-
-  socket.on('host:state', (nextState: HostQuizState) => {
-    state.value = nextState
+  clockTimer = window.setInterval(() => { now.value = Date.now() }, 100)
+  socket.on('connect', () => {
+    isConnected.value = true
+    joinDisplayRoom()
   })
-
-  if (adminToken.value) void connectHost()
+  socket.on('disconnect', () => { isConnected.value = false })
+  socket.on('session:state', applyState)
+  socket.connect()
+  void loadState()
   void generateQr()
 })
 
@@ -96,521 +104,142 @@ onBeforeUnmount(() => {
   if (clockTimer) window.clearInterval(clockTimer)
   socket.disconnect()
 })
-
-watch(
-  () => state.value?.currentQuestion?.id,
-  () => {
-    questionAnimationKey.value += 1
-  },
-)
-
-const generateQr = async () => {
-  qrDataUrl.value = await QRCode.toDataURL(joinUrl.value, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: 260,
-    color: {
-      dark: '#070b1d',
-      light: '#ffffff',
-    },
-  })
-}
 </script>
 
 <template>
-  <main class="host-page">
-    <header class="host-header">
+  <main class="display-page">
+    <header class="display-header">
       <div class="brand">
         <img src="/logo_trans.png" alt="Izzy Quiz" />
         <div>
-          <p>Izzy Quiz Live</p>
-          <h1>{{ state?.template.title || 'Host screen' }}</h1>
+          <span>Izzy Quiz Live</span>
+          <strong>{{ state?.templateTitle || 'Host screen' }}</strong>
         </div>
       </div>
-
-      <div class="code-box">
-        <span>Код игры</span>
-        <strong>{{ code }}</strong>
+      <div class="header-meta">
+        <span v-if="!isConnected" class="connection-warning"><WifiOff :size="17" /> Переподключение</span>
+        <div class="compact-code"><span>Код</span><strong>{{ code }}</strong></div>
       </div>
     </header>
 
-    <section v-if="!state" class="connect-panel">
-      <label>
-        <span>Admin token</span>
-        <input v-model="adminToken" type="password" placeholder="dev-admin-token" @keyup.enter="connectHost" />
-      </label>
-      <button type="button" @click="connectHost">Подключить host</button>
-      <p v-if="errorMessage">{{ errorMessage }}</p>
+    <section v-if="errorMessage && !state" class="center-state error-state">
+      <WifiOff :size="64" />
+      <h1>Нет связи с игрой</h1>
+      <p>{{ errorMessage }}</p>
     </section>
 
-    <template v-else>
-      <section class="controls">
-        <button type="button" @click="hostAction('host:open-lobby')">
-          <Unlock :size="20" />
-          Открыть вход
-        </button>
-        <button type="button" @click="hostAction('host:lock-lobby')">
-          <Lock :size="20" />
-          Закрыть вход
-        </button>
-        <button type="button" @click="hostAction('host:start')">
-          <Play :size="20" />
-          Старт
-        </button>
-        <button type="button" @click="hostAction('host:next-question')">
-          <SkipForward :size="20" />
-          Вопрос
-        </button>
-        <button type="button" @click="hostAction('host:close-question')">
-          <Square :size="20" />
-          Стоп
-        </button>
-        <button type="button" @click="hostAction('host:show-answer')">
-          <Trophy :size="20" />
-          Ответ
-        </button>
+    <template v-else-if="state">
+      <section v-if="state.status === 'lobby_open' || state.status === 'lobby_locked'" class="lobby-layout">
+        <div class="lobby-copy">
+          <span class="eyebrow">Подключайтесь к игре</span>
+          <h1>{{ code }}</h1>
+          <p>Наведите камеру телефона на QR-код</p>
+          <div class="player-count"><Users /><strong>{{ state.players.length }}</strong><span>уже в игре</span></div>
+          <div v-if="latestPlayers.length" class="player-chips">
+            <span v-for="player in latestPlayers" :key="player.id">{{ player.name }}</span>
+          </div>
+        </div>
+        <div class="qr-panel">
+          <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR-код для входа" />
+          <strong>{{ joinUrl }}</strong>
+          <span v-if="state.status === 'lobby_locked'">Вход временно закрыт</span>
+        </div>
       </section>
 
-      <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
-
-      <section class="host-grid">
-        <article class="stage-card" :key="questionAnimationKey">
-          <div class="stage-topline">
-            <span>{{ isAnswerMode ? 'Ответ' : state.status }}</span>
-            <strong>{{ currentQuestionNumber }} / {{ state.questionCount }}</strong>
-          </div>
-
-          <div v-if="state.status === 'question_open'" class="timer-row">
-            <strong>{{ remainingSeconds }}</strong>
-            <div>
-              <span :style="{ width: `${timerProgress}%` }" />
-            </div>
-          </div>
-
-          <template v-if="state.currentQuestion">
-            <p class="question-transition">Вопрос {{ currentQuestionNumber }}</p>
-            <h2>{{ state.currentQuestion.text }}</h2>
-
-            <img
-              v-if="state.currentQuestion.media?.type === 'image'"
-              :src="state.currentQuestion.media.url"
-              alt=""
-              class="question-media"
-            />
-            <audio
-              v-if="state.currentQuestion.media?.type === 'audio'"
-              :src="state.currentQuestion.media.url"
-              controls
-              class="w-full"
-            />
-
-            <div class="answers-grid">
-              <div
-                v-for="(option, index) in state.currentQuestion.options"
-                :key="option.id"
-                class="answer-tile"
-                :class="{
-                  correct: state.status === 'show_answer' && option.id === state.currentQuestion.correctOptionId,
-                  dimmed: state.status === 'show_answer' && option.id !== state.currentQuestion.correctOptionId,
-                }"
-              >
-                <span>{{ index + 1 }}</span>
-                {{ option.text }}
-              </div>
-            </div>
-          </template>
-
-          <div v-else class="waiting-state">
-            <span>{{ state.players.length }}</span>
-            <p>игроков в комнате ожидания</p>
-            <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR для входа игроков" class="host-qr" />
-            <small>{{ joinUrl }}</small>
-          </div>
-        </article>
-
-        <aside class="score-card">
-          <div class="score-header">
-            <span>Ответили: {{ answersForCurrentQuestion.length }}</span>
-            <strong>{{ state.players.length }} игроков</strong>
-          </div>
-
-          <ol>
-            <li v-for="(player, index) in sortedPlayers" :key="player.id">
-              <span class="rank-place">{{ index + 1 }}</span>
-              <span :class="{ offline: !player.connected }">{{ player.name }}</span>
-              <strong>{{ player.score }}</strong>
-            </li>
-          </ol>
-        </aside>
+      <section v-else-if="state.status === 'countdown'" class="center-state countdown-state">
+        <span class="eyebrow">Вопрос {{ currentQuestionNumber }} из {{ state.questionCount }}</span>
+        <div :key="countdownNumber" class="countdown-number">{{ countdownNumber }}</div>
+        <h1>Приготовьтесь</h1>
       </section>
+
+      <section v-else-if="state.status === 'question_open' && state.currentQuestion" class="question-stage">
+        <div class="stage-meta">
+          <span>Вопрос {{ currentQuestionNumber }} / {{ state.questionCount }}</span>
+          <span><Users :size="19" /> Ответили {{ answeredCount }} / {{ state.players.length }}</span>
+        </div>
+        <div class="question-main">
+          <h1>{{ state.currentQuestion.text }}</h1>
+          <img
+            v-if="state.currentQuestion.media?.type === 'image'"
+            :src="state.currentQuestion.media.url"
+            alt=""
+            class="question-media"
+          />
+          <audio
+            v-if="state.currentQuestion.media?.type === 'audio'"
+            :src="state.currentQuestion.media.url"
+            controls
+          />
+        </div>
+        <div class="host-timer">
+          <strong :class="{ urgent: remainingSeconds <= 5 }"><Clock3 />{{ remainingSeconds }}</strong>
+          <div><span :style="{ width: `${timerProgress}%` }" /></div>
+        </div>
+      </section>
+
+      <section v-else-if="state.status === 'show_answer' && state.currentQuestion" class="answer-stage center-state">
+        <div class="answer-icon"><Check /></div>
+        <span class="eyebrow">Правильный ответ</span>
+        <p>{{ state.currentQuestion.text }}</p>
+        <h1>{{ correctOption?.text }}</h1>
+        <small>Рейтинг появится через {{ remainingSeconds }} сек.</small>
+      </section>
+
+      <section v-else-if="state.status === 'leaderboard'" class="leaderboard-stage">
+        <div class="leaderboard-title">
+          <div class="trophy"><Trophy /></div>
+          <div><span class="eyebrow">После вопроса {{ currentQuestionNumber }}</span><h1>Лидеры игры</h1></div>
+          <strong>Дальше через {{ remainingSeconds }}</strong>
+        </div>
+        <ol>
+          <li v-for="(player, index) in leaders" :key="player.id" :class="`place-${index + 1}`">
+            <span><Crown v-if="index === 0" />{{ index + 1 }}</span>
+            <strong>{{ player.name }}</strong>
+            <b>{{ player.score }}</b>
+          </li>
+        </ol>
+      </section>
+
+      <section v-else-if="state.status === 'finished'" class="final-stage">
+        <div class="confetti" aria-hidden="true"><i v-for="index in 24" :key="index" /></div>
+        <span class="eyebrow">Игра завершена</span>
+        <h1>Победители</h1>
+        <div class="podium">
+          <article v-if="podium[1]" class="podium-place second"><span>2</span><strong>{{ podium[1].name }}</strong><b>{{ podium[1].score }}</b></article>
+          <article v-if="podium[0]" class="podium-place first"><Crown /><span>1</span><strong>{{ podium[0].name }}</strong><b>{{ podium[0].score }}</b></article>
+          <article v-if="podium[2]" class="podium-place third"><span>3</span><strong>{{ podium[2].name }}</strong><b>{{ podium[2].score }}</b></article>
+        </div>
+      </section>
+
+      <section v-else-if="state.status === 'paused'" class="center-state paused-state">
+        <Pause />
+        <span class="eyebrow">Пауза</span>
+        <h1>Скоро продолжим</h1>
+      </section>
+
+      <section v-else class="center-state"><h1>Подготавливаем следующий этап…</h1></section>
     </template>
   </main>
 </template>
 
 <style scoped>
-.host-page {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #070b1d, #132640 58%, #231038);
-  color: white;
-  padding: clamp(18px, 3vw, 36px);
-}
-
-.host-header,
-.controls,
-.host-grid,
-.brand,
-.code-box,
-.stage-topline,
-.score-header,
-.answer-tile,
-.score-card li {
-  display: flex;
-}
-
-.host-header {
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.brand {
-  align-items: center;
-  gap: 14px;
-}
-
-.brand img {
-  width: 62px;
-  height: 62px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.12);
-  padding: 8px;
-}
-
-.brand p,
-.code-box span,
-.stage-topline span,
-.score-header span {
-  color: #67e8f9;
-  font-size: 12px;
-  font-weight: 950;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-
-.brand h1 {
-  font-size: clamp(28px, 4vw, 58px);
-  font-weight: 950;
-  line-height: 0.95;
-}
-
-.code-box {
-  min-width: 180px;
-  flex-direction: column;
-  align-items: center;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 14px 20px;
-}
-
-.code-box strong {
-  font-size: 40px;
-  letter-spacing: 0.1em;
-}
-
-.connect-panel,
-.stage-card,
-.score-card,
-.controls {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 24px;
-  background: rgba(11, 17, 40, 0.82);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.28);
-}
-
-.connect-panel {
-  display: grid;
-  gap: 14px;
-  max-width: 520px;
-  margin: 80px auto 0;
-  padding: 28px;
-}
-
-.connect-panel label {
-  display: grid;
-  gap: 8px;
-}
-
-.connect-panel span {
-  color: #67e8f9;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.connect-panel input {
-  min-height: 54px;
-  border-radius: 14px;
-  background: #070b1d;
-  padding: 0 16px;
-  color: white;
-  font-weight: 850;
-}
-
-.connect-panel button,
-.controls button {
-  min-height: 48px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 14px;
-  background: #67e8f9;
-  color: #061022;
-  font-weight: 950;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.controls {
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 28px;
-  padding: 14px;
-}
-
-.controls button {
-  flex: 1 1 150px;
-}
-
-.host-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
-  gap: 18px;
-  margin-top: 18px;
-}
-
-.stage-card,
-.score-card {
-  padding: clamp(22px, 3vw, 38px);
-}
-
-.stage-card {
-  animation: question-enter 0.55s ease both;
-}
-
-.stage-topline,
-.score-header {
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.stage-topline strong,
-.score-header strong {
-  color: #cbd5e1;
-  font-weight: 950;
-}
-
-.stage-card h2 {
-  margin-top: 26px;
-  font-size: clamp(38px, 5vw, 82px);
-  line-height: 0.98;
-  font-weight: 950;
-}
-
-.question-transition {
-  margin-top: 24px;
-  color: #f0abfc;
-  font-size: 14px;
-  font-weight: 950;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
-.timer-row {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  margin-top: 22px;
-}
-
-.timer-row strong {
-  display: grid;
-  height: 62px;
-  place-items: center;
-  border-radius: 18px;
-  background: rgba(103, 232, 249, 0.16);
-  color: #67e8f9;
-  font-size: 34px;
-  font-weight: 950;
-}
-
-.timer-row div {
-  height: 16px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.timer-row span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #67e8f9, #f0abfc);
-  transition: width 0.25s linear;
-}
-
-.question-media {
-  width: 100%;
-  max-height: 32vh;
-  object-fit: contain;
-  margin-top: 24px;
-  border-radius: 20px;
-}
-
-.answers-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 32px;
-}
-
-.answer-tile {
-  align-items: center;
-  gap: 16px;
-  min-height: 92px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 18px;
-  font-size: clamp(18px, 2vw, 28px);
-  font-weight: 900;
-}
-
-.answer-tile span {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  place-items: center;
-  border-radius: 14px;
-  background: rgba(103, 232, 249, 0.18);
-  color: #67e8f9;
-}
-
-.answer-tile.correct {
-  border-color: rgba(74, 222, 128, 0.7);
-  background: rgba(74, 222, 128, 0.18);
-}
-
-.answer-tile.dimmed {
-  opacity: 0.42;
-}
-
-.waiting-state {
-  min-height: 52vh;
-  display: grid;
-  place-content: center;
-  text-align: center;
-  color: #cbd5e1;
-  font-size: 28px;
-  font-weight: 900;
-}
-
-.waiting-state span {
-  font-size: clamp(90px, 12vw, 180px);
-  line-height: 0.9;
-  color: white;
-}
-
-.host-qr {
-  width: min(260px, 70vw);
-  margin: 22px auto 0;
-  border-radius: 22px;
-  background: white;
-  padding: 12px;
-}
-
-.waiting-state small {
-  display: block;
-  max-width: 100%;
-  margin-top: 12px;
-  color: #67e8f9;
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
-
-.score-card ol {
-  display: grid;
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.score-card li {
-  align-items: center;
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  gap: 14px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 14px 16px;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.rank-place {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: 12px;
-  background: rgba(103, 232, 249, 0.16);
-  color: #67e8f9;
-}
-
-.score-card li strong {
-  color: #67e8f9;
-}
-
-.offline {
-  opacity: 0.45;
-}
-
-.error-text {
-  margin-top: 14px;
-  border-radius: 14px;
-  background: rgba(248, 113, 113, 0.14);
-  padding: 12px 14px;
-  color: #fecaca;
-  font-weight: 800;
-}
-
-@media (max-width: 980px) {
-  .host-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 720px) {
-  .host-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .answers-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@keyframes question-enter {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
+.display-page { height: 100vh; height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0,1fr); gap: clamp(10px,1.8vh,20px); background: radial-gradient(circle at 8% 8%,rgba(103,232,249,.14),transparent 26%),radial-gradient(circle at 92% 92%,rgba(217,70,239,.14),transparent 28%),#070b1d; color:#fff; padding:clamp(16px,2.6vw,36px); }
+.display-header,.brand,.header-meta,.compact-code,.stage-meta,.host-timer,.player-count,.leaderboard-title,.leaderboard-stage li { display:flex; align-items:center; }
+.display-header { min-width:0; justify-content:space-between; gap:24px; }
+.brand { min-width:0; gap:13px; }.brand img{width:clamp(44px,5vw,68px);height:clamp(44px,5vw,68px);padding:7px;border-radius:18px;background:rgba(255,255,255,.1)}
+.brand div{min-width:0;display:grid;gap:3px}.brand span,.eyebrow,.compact-code span{color:#67e8f9;font-size:clamp(9px,1vw,13px);font-weight:950;letter-spacing:.2em;text-transform:uppercase}.brand strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(24px,3.5vw,52px);line-height:1;font-weight:950}
+.header-meta{gap:12px}.connection-warning{display:flex;align-items:center;gap:7px;color:#fda4af;font-weight:900}.compact-code{gap:12px;border:1px solid rgba(255,255,255,.12);border-radius:17px;background:rgba(255,255,255,.08);padding:10px 16px}.compact-code{flex-direction:column;gap:2px}.compact-code strong{font-size:clamp(24px,3vw,42px);line-height:1;letter-spacing:.12em}
+.lobby-layout{min-height:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:clamp(18px,3vw,42px);border:1px solid rgba(255,255,255,.12);border-radius:30px;background:rgba(11,17,40,.82);padding:clamp(24px,4vw,58px)}
+.lobby-copy{min-width:0;display:flex;flex-direction:column;justify-content:center}.lobby-copy h1{margin-top:1vh;font-size:clamp(86px,14vw,210px);line-height:.86;letter-spacing:.07em;font-weight:950}.lobby-copy>p{margin-top:2vh;color:#cbd5e1;font-size:clamp(18px,2.3vw,34px);font-weight:800}.player-count{gap:12px;margin-top:3vh}.player-count svg{color:#67e8f9}.player-count strong{font-size:clamp(30px,4vw,58px)}.player-count span{color:#94a3b8;font-size:clamp(16px,1.6vw,24px);font-weight:850}.player-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:2vh}.player-chips span{border-radius:999px;background:rgba(255,255,255,.08);padding:8px 13px;font-weight:850}
+.qr-panel{min-height:0;display:grid;align-content:center;justify-items:center;gap:12px;text-align:center}.qr-panel img{width:min(34vw,42vh,410px);border-radius:24px;background:#fff;padding:12px}.qr-panel strong{max-width:100%;color:#67e8f9;font-size:clamp(12px,1.2vw,17px);overflow-wrap:anywhere}.qr-panel span{color:#fda4af;font-weight:900}
+.center-state,.question-stage,.leaderboard-stage,.final-stage{min-height:0;border:1px solid rgba(255,255,255,.12);border-radius:30px;background:rgba(11,17,40,.82);box-shadow:0 30px 90px rgba(0,0,0,.25)}.center-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:4vw}.center-state h1{font-size:clamp(48px,7vw,110px);line-height:.95;font-weight:950}.center-state p{margin-top:18px;color:#cbd5e1;font-size:clamp(17px,2vw,28px)}
+.countdown-number{font-size:clamp(150px,25vw,360px);line-height:.78;font-weight:950;animation:countdown .8s ease both}.countdown-state h1{margin-top:3vh;font-size:clamp(36px,5vw,74px)}
+.question-stage{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:2vh;padding:clamp(24px,3vw,48px)}.stage-meta{justify-content:space-between;color:#94a3b8;font-size:clamp(14px,1.5vw,22px);font-weight:900;text-transform:uppercase}.stage-meta span{display:flex;align-items:center;gap:8px}.question-main{min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2vh;text-align:center}.question-main h1{max-width:1500px;font-size:clamp(48px,6.4vw,108px);line-height:.98;font-weight:950}.question-media{max-width:80%;max-height:38vh;object-fit:contain;border-radius:22px}.question-main audio{width:min(100%,760px)}
+.host-timer{gap:18px}.host-timer>strong{display:flex;align-items:center;justify-content:center;gap:8px;min-width:108px;color:#67e8f9;font-size:clamp(30px,4vw,56px);font-variant-numeric:tabular-nums}.host-timer>strong.urgent{color:#fb7185}.host-timer>div{height:18px;flex:1;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.1)}.host-timer>div span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#d946ef,#67e8f9);transition:width .1s linear}
+.answer-icon{display:grid;width:clamp(76px,8vw,122px);height:clamp(76px,8vw,122px);place-items:center;border-radius:50%;background:#4ade80;color:#052e16;box-shadow:0 0 0 16px rgba(74,222,128,.1)}.answer-icon svg{width:55%;height:55%;stroke-width:4}.answer-stage p{max-width:1200px;margin-top:3vh}.answer-stage h1{max-width:1400px;margin-top:2vh;color:#4ade80}.answer-stage small{margin-top:3vh;color:#94a3b8;font-size:18px;font-weight:850}
+.leaderboard-stage{display:grid;grid-template-rows:auto minmax(0,1fr);gap:2vh;padding:clamp(24px,3vw,46px)}.leaderboard-title{gap:16px}.leaderboard-title>strong{margin-left:auto;color:#94a3b8}.leaderboard-title h1{font-size:clamp(38px,5vw,72px);line-height:1;font-weight:950}.trophy{display:grid;width:64px;height:64px;place-items:center;border-radius:20px;background:#facc15;color:#422006}.leaderboard-stage ol{min-height:0;display:grid;align-content:center;gap:1.2vh}.leaderboard-stage li{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:18px;border-radius:18px;background:rgba(255,255,255,.07);padding:clamp(12px,1.5vh,20px) 22px}.leaderboard-stage li>span{display:flex;align-items:center;gap:7px;color:#94a3b8;font-size:clamp(20px,2.2vw,32px);font-weight:950}.leaderboard-stage li>strong{font-size:clamp(24px,2.8vw,40px)}.leaderboard-stage li>b{color:#67e8f9;font-size:clamp(24px,2.8vw,40px)}.leaderboard-stage .place-1{border:1px solid rgba(250,204,21,.55);background:rgba(250,204,21,.1)}.place-1 svg{color:#facc15}
+.final-stage{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3vh 4vw}.final-stage>h1{margin-top:1vh;font-size:clamp(54px,7vw,100px);line-height:.9;font-weight:950}.podium{z-index:1;width:min(100%,1200px);min-height:0;display:flex;align-items:flex-end;justify-content:center;gap:clamp(12px,2vw,28px);margin-top:4vh}.podium-place{width:30%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;border-radius:24px 24px 10px 10px;background:rgba(255,255,255,.09);padding:24px 15px;text-align:center;animation:podium-in .7s ease both}.podium-place.first{min-height:38vh;border:2px solid rgba(250,204,21,.7);background:linear-gradient(180deg,rgba(250,204,21,.22),rgba(255,255,255,.08));animation-delay:.8s}.podium-place.second{min-height:29vh;animation-delay:.35s}.podium-place.third{min-height:23vh;animation-delay:.1s}.podium-place>span{font-size:clamp(36px,5vw,72px);font-weight:950}.podium-place>strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:clamp(22px,2.5vw,38px)}.podium-place>b{margin-top:10px;color:#67e8f9;font-size:clamp(20px,2vw,32px)}.podium-place>svg{color:#facc15;width:50px;height:50px}.confetti{position:absolute;inset:0;pointer-events:none}.confetti i{position:absolute;top:-10%;width:10px;height:22px;background:#67e8f9;animation:fall 4s linear infinite}.confetti i:nth-child(3n){background:#facc15}.confetti i:nth-child(3n+1){background:#d946ef}.confetti i:nth-child(odd){transform:rotate(25deg)}.confetti i:nth-child(1){left:4%;animation-delay:.2s}.confetti i:nth-child(2){left:9%;animation-delay:1.3s}.confetti i:nth-child(3){left:14%;animation-delay:2.1s}.confetti i:nth-child(4){left:19%;animation-delay:.8s}.confetti i:nth-child(5){left:24%;animation-delay:2.8s}.confetti i:nth-child(6){left:29%;animation-delay:1.8s}.confetti i:nth-child(7){left:34%;animation-delay:.4s}.confetti i:nth-child(8){left:39%;animation-delay:2.4s}.confetti i:nth-child(9){left:44%;animation-delay:1.1s}.confetti i:nth-child(10){left:49%;animation-delay:3.1s}.confetti i:nth-child(11){left:54%;animation-delay:.6s}.confetti i:nth-child(12){left:59%;animation-delay:2s}.confetti i:nth-child(13){left:64%;animation-delay:1.5s}.confetti i:nth-child(14){left:69%;animation-delay:2.6s}.confetti i:nth-child(15){left:74%;animation-delay:.9s}.confetti i:nth-child(16){left:79%;animation-delay:3.3s}.confetti i:nth-child(17){left:84%;animation-delay:1.7s}.confetti i:nth-child(18){left:89%;animation-delay:.3s}.confetti i:nth-child(19){left:94%;animation-delay:2.2s}
+.paused-state>svg{width:100px;height:100px;margin-bottom:24px;color:#67e8f9}.error-state{color:#fda4af}.error-state h1{margin-top:20px}
+@keyframes countdown{from{opacity:0;transform:scale(1.45)}to{opacity:1;transform:scale(1)}}@keyframes podium-in{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}@keyframes fall{to{transform:translateY(120vh) rotate(540deg)}}
+@media(max-width:800px){.lobby-layout{grid-template-columns:1fr 290px}.lobby-copy h1{font-size:12vw}.player-chips{display:none}.question-main h1{font-size:7vw}.display-page{padding:14px}.brand strong{max-width:55vw}}
 </style>

@@ -15,7 +15,7 @@ export type QuizSocketAck<T = unknown> = AckSuccess<T> | AckError
 
 export function createQuizSocket(): Socket {
   return io(getQuizSocketUrl(), {
-    autoConnect: true,
+    autoConnect: false,
     transports: ['websocket', 'polling'],
   })
 }

@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight } from 'lucide-vue-next'
-import { joinQuiz } from '@/services/quizApi'
+import { getQuizErrorMessage, joinQuiz } from '@/services/quizApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,7 +24,7 @@ const submit = async () => {
     window.localStorage.setItem(`izzy-player:${response.state.code}`, response.player.id)
     await router.push(`/quiz/${response.state.code}/player?playerId=${response.player.id}`)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не получилось войти в игру'
+    errorMessage.value = getQuizErrorMessage(error, 'Не получилось войти в игру')
   } finally {
     isLoading.value = false
   }

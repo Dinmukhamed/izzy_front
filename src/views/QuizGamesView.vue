@@ -1,678 +1,152 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import QRCode from 'qrcode'
-import {
-  Copy,
-  ExternalLink,
-  FileText,
-  MonitorPlay,
-  QrCode,
-  RefreshCw,
-  Rocket,
-  RotateCcw,
-  Users,
-} from 'lucide-vue-next'
-import { createSession, getQuizErrorMessage, getTemplates } from '@/services/quizApi'
+import { Copy, ExternalLink, FileText, MonitorPlay, Play, Plus, RefreshCw, Settings2, Users } from 'lucide-vue-next'
+import { createSession, getQuizErrorMessage, getSessions, getTemplates } from '@/services/quizApi'
 import { getStoredAdminToken, setStoredAdminToken } from '@/services/quizSocket'
-import type { CreateSessionResponse, QuizTemplate } from '@/types/quiz'
+import type { QuizSessionSummary, QuizStatus, QuizTemplate } from '@/types/quiz'
 
 const adminToken = ref('')
 const templates = ref<QuizTemplate[]>([])
+const sessions = ref<QuizSessionSummary[]>([])
 const selectedTemplateId = ref('')
-const createdSession = ref<CreateSessionResponse | null>(null)
+const selectedSessionCode = ref('')
+const showFinished = ref(false)
 const qrDataUrl = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
+const successMessage = ref('')
 const copiedValue = ref('')
+let sessionsRefreshTimer: number | undefined
 
+const statusLabels: Record<QuizStatus, string> = {
+  lobby_open:'Лобби открыто',lobby_locked:'Лобби закрыто',in_progress:'Игра идёт',countdown:'Обратный отсчёт',question_open:'Идёт вопрос',question_closed:'Ответы закрыты',show_answer:'Показываем ответ',leaderboard:'Рейтинг',paused:'Пауза',finished:'Завершена',
+}
 const activeTemplates = computed(() => templates.value.filter((template) => template.status === 'active'))
-const selectedTemplate = computed(
-  () => activeTemplates.value.find((template) => template.id === selectedTemplateId.value) || null,
+const selectedTemplate = computed(() => activeTemplates.value.find((template) => template.id === selectedTemplateId.value) || null)
+const visibleSessions = computed(() => sessions.value.filter((session) => showFinished.value || session.status !== 'finished'))
+const selectedSession = computed(() =>
+  sessions.value.find((session) => session.code === selectedSessionCode.value) || visibleSessions.value[0] || null,
 )
-const hostLink = computed(() => (createdSession.value ? `/quiz/${createdSession.value.code}/host` : ''))
-const joinLink = computed(() => (createdSession.value ? `/quiz/join?code=${createdSession.value.code}` : ''))
-const absoluteHostLink = computed(() => `${window.location.origin}${hostLink.value}`)
+const joinLink = computed(() => selectedSession.value ? `/quiz/join?code=${selectedSession.value.code}` : '')
 const absoluteJoinLink = computed(() => `${window.location.origin}${joinLink.value}`)
+const controlLink = computed(() => selectedSession.value ? `/quiz/${selectedSession.value.code}/control` : '')
+const hostLink = computed(() => selectedSession.value ? `/quiz/${selectedSession.value.code}/host` : '')
 
-const loadTemplates = async () => {
-  if (!adminToken.value.trim()) {
-    errorMessage.value = 'Enter the admin token first'
-    return
-  }
-
-  errorMessage.value = ''
+async function loadData() {
+  if (!adminToken.value.trim()) { errorMessage.value = 'Введите admin token'; return }
+  isLoading.value = true; errorMessage.value = ''; successMessage.value = ''
   setStoredAdminToken(adminToken.value.trim())
-
   try {
-    templates.value = await getTemplates(adminToken.value.trim())
-    if (!activeTemplates.value.some((template) => template.id === selectedTemplateId.value)) {
-      selectedTemplateId.value = activeTemplates.value[0]?.id || ''
+    const [loadedTemplates, loadedSessions] = await Promise.all([
+      getTemplates(adminToken.value.trim()), getSessions(adminToken.value.trim()),
+    ])
+    templates.value = loadedTemplates
+    sessions.value = loadedSessions
+    if (!activeTemplates.value.some((template) => template.id === selectedTemplateId.value)) selectedTemplateId.value = activeTemplates.value[0]?.id || ''
+    const storedCode = window.localStorage.getItem('izzy-last-session') || ''
+    if (!sessions.value.some((session) => session.code === selectedSessionCode.value)) {
+      selectedSessionCode.value = sessions.value.find((session) => session.code === storedCode)?.code || visibleSessions.value[0]?.code || sessions.value[0]?.code || ''
     }
   } catch (error) {
-    errorMessage.value = getQuizErrorMessage(error, 'Could not load templates')
-  }
+    errorMessage.value = getQuizErrorMessage(error, 'Не удалось загрузить live-игры')
+  } finally { isLoading.value = false }
 }
 
-const createLiveGame = async () => {
+async function createLiveGame() {
   if (!selectedTemplate.value) return
-
-  isLoading.value = true
-  errorMessage.value = ''
-
+  isLoading.value = true; errorMessage.value = ''; successMessage.value = ''
   try {
-    createdSession.value = await createSession(selectedTemplate.value.id, adminToken.value.trim())
-    await generateQr()
+    const created = await createSession(selectedTemplate.value.id, adminToken.value.trim())
+    await loadData()
+    selectedSessionCode.value = created.code
+    window.localStorage.setItem('izzy-last-session', created.code)
+    successMessage.value = `Игра ${created.code} создана и сохранена`
   } catch (error) {
-    errorMessage.value = getQuizErrorMessage(error, 'Could not create live game')
-  } finally {
-    isLoading.value = false
-  }
+    errorMessage.value = getQuizErrorMessage(error, 'Не удалось создать игру')
+  } finally { isLoading.value = false }
 }
 
-const generateQr = async () => {
-  if (!joinLink.value) return
-
-  qrDataUrl.value = await QRCode.toDataURL(absoluteJoinLink.value, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: 360,
-    color: {
-      dark: '#070b1d',
-      light: '#ffffff',
-    },
-  })
+async function refreshSessions() {
+  if (!adminToken.value.trim()) return
+  try { sessions.value = await getSessions(adminToken.value.trim()) } catch { /* full refresh shows errors */ }
 }
 
-const copyText = async (text: string, label: string) => {
-  await navigator.clipboard.writeText(text)
-  copiedValue.value = label
-  window.setTimeout(() => {
-    if (copiedValue.value === label) copiedValue.value = ''
-  }, 1800)
+function selectSession(session: QuizSessionSummary) {
+  selectedSessionCode.value = session.code
+  window.localStorage.setItem('izzy-last-session', session.code)
 }
 
-const resetCreatedSession = () => {
-  createdSession.value = null
-  qrDataUrl.value = ''
-  copiedValue.value = ''
+async function generateQr() {
+  if (!absoluteJoinLink.value) { qrDataUrl.value = ''; return }
+  qrDataUrl.value = await QRCode.toDataURL(absoluteJoinLink.value, { errorCorrectionLevel:'M', margin:1, width:360, color:{dark:'#070b1d',light:'#ffffff'} })
 }
 
-watch(joinLink, () => {
-  if (joinLink.value) void generateQr()
-})
+async function copyText(value: string, label: string) {
+  await navigator.clipboard.writeText(value); copiedValue.value = label
+  window.setTimeout(() => { if (copiedValue.value === label) copiedValue.value = '' }, 1600)
+}
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(value))
+}
+
+function questionCountLabel(count: number) {
+  const lastTwo = count % 100
+  const last = count % 10
+  if (lastTwo >= 11 && lastTwo <= 14) return `${count} вопросов`
+  if (last === 1) return `${count} вопрос`
+  if (last >= 2 && last <= 4) return `${count} вопроса`
+  return `${count} вопросов`
+}
+
+function playerCountLabel(count: number) {
+  const lastTwo = count % 100
+  const last = count % 10
+  if (lastTwo >= 11 && lastTwo <= 14) return `${count} игроков`
+  if (last === 1) return `${count} игрок`
+  if (last >= 2 && last <= 4) return `${count} игрока`
+  return `${count} игроков`
+}
+
+watch(() => selectedSession.value?.code, () => void generateQr(), { immediate:true })
 onMounted(() => {
-  adminToken.value = getStoredAdminToken()
-  if (adminToken.value) void loadTemplates()
+  adminToken.value = getStoredAdminToken() || (import.meta.env.DEV ? 'dev-admin-token' : '')
+  if (adminToken.value) void loadData()
+  sessionsRefreshTimer = window.setInterval(() => { void refreshSessions() }, 5_000)
 })
+onBeforeUnmount(() => { if (sessionsRefreshTimer) window.clearInterval(sessionsRefreshTimer) })
 </script>
 
 <template>
-  <main class="games-page">
-    <section class="games-shell">
-      <header class="topbar">
-        <div class="brand">
-          <img src="/logo_trans.png" alt="Izzy Quiz" />
-          <div>
-            <p>Izzy Quiz Admin</p>
-            <h1>Live games</h1>
-          </div>
-        </div>
-        <a class="nav-link" href="/quiz/templates">Templates</a>
-      </header>
+  <main class="games-page"><section class="games-shell">
+    <header class="topbar"><div class="brand"><img src="/logo_trans.png" alt="Izzy Quiz" /><div><p>Izzy Quiz Admin</p><h1>Live games</h1></div></div><a class="nav-link" href="/quiz/templates">Шаблоны</a></header>
 
-      <section class="token-panel">
-        <label>
-          <span>Admin token</span>
-          <input
-            v-model="adminToken"
-            type="password"
-            placeholder="dev-admin-token"
-            @keyup.enter="loadTemplates"
-          />
-        </label>
-        <button type="button" @click="loadTemplates">
-          <RefreshCw :size="18" />
-          Connect
-        </button>
-      </section>
+    <section class="connection-panel"><label><span>Admin token</span><input v-model="adminToken" type="password" placeholder="dev-admin-token" @keyup.enter="loadData" /></label><button type="button" :disabled="isLoading" @click="loadData"><RefreshCw :size="18" />{{ isLoading ? 'Обновляем…' : 'Обновить' }}</button></section>
+    <p v-if="errorMessage" class="message error">{{ errorMessage }}</p><p v-if="successMessage" class="message success">{{ successMessage }}</p>
 
-      <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>
-
-      <section v-if="!createdSession" class="setup-panel panel">
-        <div class="section-heading">
-          <p class="eyebrow">Step 1</p>
-          <h2>Create a live game</h2>
-          <p>Select an active template. We will create a new lobby and generate a player code.</p>
-        </div>
-
-        <template v-if="activeTemplates.length">
-          <label class="template-select">
-            <span>Game template</span>
-            <select v-model="selectedTemplateId">
-              <option v-for="template in activeTemplates" :key="template.id" :value="template.id">
-                {{ template.title }} · {{ template.questions.length }} questions
-              </option>
-            </select>
-          </label>
-
-          <div v-if="selectedTemplate" class="selected-template">
-            <FileText :size="22" />
-            <div>
-              <strong>{{ selectedTemplate.title }}</strong>
-              <span>{{ selectedTemplate.questions.length }} questions · active template</span>
-            </div>
-          </div>
-
-          <button
-            class="primary-button"
-            type="button"
-            :disabled="!selectedTemplate || isLoading"
-            @click="createLiveGame"
-          >
-            <Rocket :size="22" />
-            {{ isLoading ? 'Creating game...' : 'Create live game' }}
-          </button>
-        </template>
-
-        <div v-else class="empty-state">
-          <h3>No active templates</h3>
-          <p>Create a template or change one to active before starting a live game.</p>
-          <a href="/quiz/templates">Open templates</a>
-        </div>
-      </section>
-
-      <section v-else class="live-panel panel">
-        <header class="live-panel-header">
-          <div>
-            <p class="eyebrow">Live game ready</p>
-            <h2>{{ selectedTemplate?.title }}</h2>
-          </div>
-          <button class="new-game-button" type="button" @click="resetCreatedSession">
-            <RotateCcw :size="18" />
-            New game
-          </button>
-        </header>
-
-        <div class="code-stage">
-          <span>Player game code</span>
-          <strong>{{ createdSession.code }}</strong>
-          <button type="button" @click="copyText(createdSession.code, 'code')">
-            <Copy :size="18" />
-            {{ copiedValue === 'code' ? 'Code copied' : 'Copy code' }}
-          </button>
-        </div>
-
-        <div class="join-section">
-          <div class="join-heading">
-            <QrCode :size="24" />
-            <div>
-              <h3>Players join here</h3>
-              <p>Show this QR code or share the player link.</p>
-            </div>
-          </div>
-
-          <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR for player join page" class="qr-code" />
-          <p class="join-url">{{ absoluteJoinLink }}</p>
-        </div>
-
+    <section v-if="selectedSession" class="live-stage panel">
+      <div class="live-heading"><div><span class="eyebrow">Выбранная игра</span><h2>{{ selectedSession.templateTitle }}</h2><p>{{ statusLabels[selectedSession.status] }} · {{ playerCountLabel(selectedSession.playerCount) }} · вопрос {{ (selectedSession.currentQuestionIndex ?? -1) + 1 }} / {{ selectedSession.questionCount }}</p></div><span :class="['status-pill',selectedSession.status]">{{ statusLabels[selectedSession.status] }}</span></div>
+      <div class="code-stage"><span>Код для игроков</span><strong>{{ selectedSession.code }}</strong><button type="button" @click="copyText(selectedSession.code,'code')"><Copy :size="18" />{{ copiedValue === 'code' ? 'Скопировано' : 'Копировать код' }}</button></div>
+      <div class="live-tools">
+        <div class="qr-wrap"><img v-if="qrDataUrl" :src="qrDataUrl" alt="QR-код входа" /><p>{{ absoluteJoinLink }}</p></div>
         <div class="launch-actions">
-          <a class="action-link action-link--primary" :href="hostLink" target="_blank" rel="noreferrer">
-            <MonitorPlay :size="22" />
-            <span>
-              <small>Open on the main screen</small>
-              Host screen
-            </span>
-            <ExternalLink :size="19" />
-          </a>
-
-          <a class="action-link" :href="joinLink" target="_blank" rel="noreferrer">
-            <Users :size="22" />
-            <span>
-              <small>Test the player flow</small>
-              Player join
-            </span>
-            <ExternalLink :size="19" />
-          </a>
-
-          <button class="copy-link-button" type="button" @click="copyText(absoluteHostLink, 'host')">
-            <Copy :size="18" />
-            {{ copiedValue === 'host' ? 'Host link copied' : 'Copy host link' }}
-          </button>
-          <button class="copy-link-button" type="button" @click="copyText(absoluteJoinLink, 'join')">
-            <Copy :size="18" />
-            {{ copiedValue === 'join' ? 'Player link copied' : 'Copy player link' }}
-          </button>
+          <a class="primary-link" :href="controlLink"><Settings2 /><span><small>Ведущий</small>Управлять игрой</span></a>
+          <a :href="hostLink" target="_blank" rel="noreferrer"><MonitorPlay /><span><small>Экран в зале</small>Открыть Host screen</span><ExternalLink :size="18" /></a>
+          <a :href="joinLink" target="_blank" rel="noreferrer"><Users /><span><small>Проверка телефона</small>Войти как игрок</span><ExternalLink :size="18" /></a>
+          <button type="button" @click="copyText(absoluteJoinLink,'join')"><Copy :size="18" />{{ copiedValue === 'join' ? 'Ссылка скопирована' : 'Скопировать ссылку входа' }}</button>
         </div>
-      </section>
+      </div>
     </section>
-  </main>
+
+    <section class="workspace-grid">
+      <article class="create-card panel"><div><span class="eyebrow">Новая игра</span><h2>Создать лобби</h2><p>Выберите активный шаблон. Игра сразу сохранится в базе.</p></div><label><span>Шаблон</span><select v-model="selectedTemplateId"><option v-for="template in activeTemplates" :key="template.id" :value="template.id">{{ template.title }} · {{ questionCountLabel(template.questions.length) }}</option></select></label><div v-if="selectedTemplate" class="template-info"><FileText /><div><strong>{{ selectedTemplate.title }}</strong><span>{{ questionCountLabel(selectedTemplate.questions.length) }}</span></div></div><button class="create-button" type="button" :disabled="!selectedTemplate || isLoading" @click="createLiveGame"><Plus :size="21" />Создать live-игру</button></article>
+
+      <article class="sessions-card panel"><header><div><span class="eyebrow">Сохранённые сессии</span><h2>Продолжить игру</h2></div><label class="finished-toggle"><input v-model="showFinished" type="checkbox" />Показывать завершённые</label></header><div v-if="visibleSessions.length" class="sessions-list"><button v-for="session in visibleSessions" :key="session.id" type="button" :class="{selected:session.code === selectedSession?.code}" @click="selectSession(session)"><span class="session-code">{{ session.code }}</span><span class="session-copy"><strong>{{ session.templateTitle }}</strong><small>{{ statusLabels[session.status] }} · {{ playerCountLabel(session.playerCount) }} · {{ formatDate(session.updatedAt) }}</small></span><Play :size="18" /></button></div><div v-else class="empty-state"><strong>Live-игр пока нет</strong><p>Создайте первую игру из активного шаблона.</p></div></article>
+    </section>
+  </section></main>
 </template>
 
 <style scoped>
-.games-page {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at 10% 10%, rgba(103, 232, 249, 0.12), transparent 28%),
-    linear-gradient(135deg, #070b1d, #132640 58%, #231038);
-  color: white;
-  padding: clamp(16px, 3vw, 36px);
-}
-
-.games-shell {
-  width: min(100%, 1180px);
-  margin: 0 auto;
-}
-
-.topbar,
-.brand,
-.token-panel button,
-.nav-link,
-.selected-template,
-.primary-button,
-.live-panel-header,
-.new-game-button,
-.code-stage button,
-.join-heading,
-.action-link,
-.copy-link-button {
-  display: flex;
-  align-items: center;
-}
-
-.topbar {
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 22px;
-}
-
-.brand {
-  gap: 14px;
-}
-
-.brand img {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.12);
-  padding: 8px;
-}
-
-.brand p,
-.eyebrow,
-label > span,
-.code-stage > span {
-  color: #67e8f9;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-.brand h1 {
-  font-size: clamp(34px, 5vw, 64px);
-  line-height: 0.95;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.nav-link,
-.token-panel,
-.panel {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(11, 17, 40, 0.88);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.26);
-}
-
-.nav-link {
-  min-height: 48px;
-  justify-content: center;
-  border-radius: 14px;
-  padding: 0 18px;
-  color: white;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.token-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  border-radius: 18px;
-  padding: 14px;
-  margin-bottom: 16px;
-}
-
-label {
-  display: grid;
-  gap: 8px;
-}
-
-input,
-select {
-  width: 100%;
-  min-height: 50px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 13px;
-  background: rgba(7, 11, 29, 0.92);
-  padding: 0 14px;
-  color: white;
-  font-size: 16px;
-  font-weight: 750;
-  outline: none;
-}
-
-input:focus,
-select:focus {
-  border-color: rgba(103, 232, 249, 0.8);
-  box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.12);
-}
-
-button,
-.nav-link,
-.action-link {
-  line-height: 1;
-}
-
-button :deep(svg),
-.nav-link :deep(svg),
-.action-link :deep(svg) {
-  display: block;
-  flex: 0 0 auto;
-}
-
-.token-panel button,
-.primary-button,
-.new-game-button,
-.code-stage button,
-.copy-link-button {
-  min-height: 48px;
-  justify-content: center;
-  gap: 9px;
-  border-radius: 13px;
-  padding: 0 16px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.token-panel button,
-.primary-button {
-  background: #67e8f9;
-  color: #061022;
-}
-
-.panel {
-  border-radius: 24px;
-  padding: clamp(22px, 4vw, 44px);
-}
-
-.section-heading {
-  max-width: 760px;
-}
-
-.section-heading h2 {
-  margin-top: 8px;
-  font-size: clamp(36px, 5vw, 64px);
-  line-height: 0.98;
-  font-weight: 950;
-}
-
-.section-heading > p:last-child {
-  margin-top: 14px;
-  color: #cbd5e1;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.6;
-}
-
-.template-select {
-  margin-top: 30px;
-}
-
-.template-select select {
-  min-height: 62px;
-  font-size: 18px;
-  font-weight: 850;
-}
-
-.selected-template {
-  gap: 14px;
-  margin-top: 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 16px;
-  color: #67e8f9;
-}
-
-.selected-template div {
-  display: grid;
-  gap: 5px;
-}
-
-.selected-template strong {
-  color: white;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.selected-template span {
-  color: #94a3b8;
-  font-weight: 750;
-}
-
-.primary-button {
-  width: 100%;
-  min-height: 62px;
-  margin-top: 18px;
-  font-size: 15px;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.empty-state {
-  margin-top: 26px;
-  border: 1px dashed rgba(255, 255, 255, 0.22);
-  border-radius: 18px;
-  padding: 24px;
-}
-
-.empty-state h3 {
-  font-size: 28px;
-  font-weight: 950;
-}
-
-.empty-state p {
-  margin-top: 8px;
-  color: #cbd5e1;
-}
-
-.empty-state a {
-  display: inline-flex;
-  margin-top: 18px;
-  color: #67e8f9;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.live-panel {
-  background:
-    radial-gradient(circle at 50% 22%, rgba(103, 232, 249, 0.12), transparent 28%),
-    rgba(11, 17, 40, 0.9);
-}
-
-.live-panel-header {
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.live-panel-header h2 {
-  margin-top: 7px;
-  font-size: clamp(26px, 4vw, 46px);
-  line-height: 1;
-  font-weight: 950;
-}
-
-.new-game-button,
-.code-stage button,
-.copy-link-button {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
-}
-
-.code-stage {
-  width: 100%;
-  display: grid;
-  place-items: center;
-  margin-top: 28px;
-  border: 1px solid rgba(103, 232, 249, 0.28);
-  border-radius: 24px;
-  background:
-    linear-gradient(135deg, rgba(103, 232, 249, 0.08), rgba(168, 85, 247, 0.14)),
-    rgba(7, 11, 29, 0.88);
-  padding: clamp(30px, 6vw, 70px) 20px;
-  text-align: center;
-}
-
-.code-stage strong {
-  max-width: 100%;
-  margin: 14px 0 22px;
-  color: white;
-  font-size: clamp(4.2rem, 15vw, 10rem);
-  font-weight: 950;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: clamp(0.02em, 1vw, 0.12em);
-  line-height: 0.86;
-  white-space: nowrap;
-  text-shadow: 0 0 44px rgba(103, 232, 249, 0.2);
-}
-
-.join-section {
-  display: grid;
-  justify-items: center;
-  margin-top: 32px;
-  text-align: center;
-}
-
-.join-heading {
-  justify-content: center;
-  gap: 12px;
-  color: #67e8f9;
-}
-
-.join-heading div {
-  text-align: left;
-}
-
-.join-heading h3 {
-  color: white;
-  font-size: 24px;
-  font-weight: 950;
-}
-
-.join-heading p {
-  margin-top: 5px;
-  color: #94a3b8;
-  font-weight: 700;
-}
-
-.qr-code {
-  width: min(100%, 300px);
-  margin-top: 20px;
-  border-radius: 22px;
-  background: white;
-  padding: 12px;
-}
-
-.join-url {
-  max-width: 100%;
-  margin-top: 12px;
-  color: #94a3b8;
-  font-size: 13px;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.launch-actions {
-  display: grid;
-  gap: 10px;
-  max-width: 760px;
-  margin: 30px auto 0;
-}
-
-.action-link {
-  min-height: 74px;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 20px;
-  gap: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 14px 18px;
-  color: white;
-}
-
-.action-link--primary {
-  border-color: rgba(103, 232, 249, 0.4);
-  background: #67e8f9;
-  color: #061022;
-}
-
-.action-link span {
-  display: grid;
-  gap: 5px;
-  font-size: 17px;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.action-link small {
-  color: currentColor;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  opacity: 0.68;
-  text-transform: none;
-}
-
-.copy-link-button {
-  width: 100%;
-}
-
-.message {
-  border-radius: 14px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  font-weight: 800;
-}
-
-.message.error {
-  background: rgba(248, 113, 113, 0.14);
-  color: #fecaca;
-}
-
-@media (max-width: 680px) {
-  .topbar,
-  .live-panel-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .token-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .nav-link {
-    width: 100%;
-  }
-
-  .code-stage strong {
-    font-size: clamp(2.8rem, 14vw, 4rem);
-    letter-spacing: 0.02em;
-  }
-}
+.games-page{min-height:100vh;background:radial-gradient(circle at 10% 10%,rgba(103,232,249,.12),transparent 28%),linear-gradient(135deg,#070b1d,#132640 58%,#231038);color:#fff;padding:clamp(16px,3vw,36px)}.games-shell{width:min(100%,1200px);margin:auto}.topbar,.brand,.nav-link,.connection-panel button,.live-heading,.code-stage,.live-tools,.launch-actions a,.launch-actions button,.template-info,.create-button,.sessions-card header,.sessions-list button,.finished-toggle{display:flex;align-items:center}.topbar{justify-content:space-between;gap:16px;margin-bottom:18px}.brand{gap:13px}.brand img{width:58px;height:58px;border-radius:17px;background:rgba(255,255,255,.1);padding:7px}.brand p,.eyebrow,label>span,.code-stage>span{color:#67e8f9;font-size:11px;font-weight:950;letter-spacing:.18em;text-transform:uppercase}.brand h1{font-size:clamp(31px,5vw,56px);line-height:.95;font-weight:950;text-transform:uppercase}.nav-link{min-height:44px;justify-content:center;border:1px solid rgba(255,255,255,.13);border-radius:13px;background:rgba(11,17,40,.85);padding:0 16px;color:#fff;font-weight:900}.panel,.connection-panel{border:1px solid rgba(255,255,255,.12);border-radius:21px;background:rgba(11,17,40,.86);box-shadow:0 24px 70px rgba(0,0,0,.24)}.connection-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;margin-bottom:14px;padding:13px}.connection-panel label{display:grid;gap:6px}.connection-panel input,select{width:100%;min-height:48px;border:1px solid rgba(255,255,255,.13);border-radius:12px;background:#070b1d;padding:0 13px;color:#fff;font-size:15px;font-weight:800}.connection-panel button,.create-button{justify-content:center;gap:8px;border-radius:12px;background:#67e8f9;padding:0 17px;color:#061022;font-weight:950}.message{margin-bottom:13px;border-radius:12px;padding:11px 13px;font-weight:850}.message.error{background:rgba(127,29,29,.75);color:#fecaca}.message.success{background:rgba(6,78,59,.7);color:#a7f3d0}.live-stage{margin-bottom:16px;padding:clamp(20px,3vw,30px)}.live-heading{justify-content:space-between;gap:18px}.live-heading h2,.create-card h2,.sessions-card h2{margin-top:5px;font-size:clamp(25px,3vw,38px);line-height:1;font-weight:950}.live-heading p,.create-card>div>p{margin-top:7px;color:#94a3b8;font-weight:750}.status-pill{border-radius:999px;background:rgba(103,232,249,.12);padding:8px 11px;color:#67e8f9;font-size:10px;font-weight:950;text-transform:uppercase}.status-pill.finished{color:#cbd5e1;background:rgba(148,163,184,.12)}.code-stage{min-height:210px;flex-direction:column;justify-content:center;margin-top:18px;border-radius:20px;background:linear-gradient(135deg,rgba(217,70,239,.18),rgba(103,232,249,.13));text-align:center}.code-stage strong{font-size:clamp(78px,14vw,180px);line-height:.9;letter-spacing:.1em;font-weight:950}.code-stage button{display:flex;align-items:center;gap:7px;margin-top:17px;border-radius:11px;background:rgba(255,255,255,.11);padding:11px 14px;color:#fff;font-weight:900}.live-tools{align-items:stretch;gap:18px;margin-top:18px}.qr-wrap{width:min(34%,300px);display:grid;justify-items:center;align-content:start;gap:8px}.qr-wrap img{width:100%;border-radius:18px;background:#fff;padding:9px}.qr-wrap p{max-width:100%;color:#94a3b8;font-size:11px;text-align:center;overflow-wrap:anywhere}.launch-actions{flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.launch-actions a,.launch-actions button{min-width:0;gap:11px;border:1px solid rgba(255,255,255,.12);border-radius:15px;background:rgba(255,255,255,.06);padding:15px;color:#fff;text-align:left;font-weight:900}.launch-actions .primary-link{border-color:transparent;background:#67e8f9;color:#061022}.launch-actions span{min-width:0;display:grid;gap:3px}.launch-actions small{opacity:.64;font-size:10px;text-transform:uppercase}.launch-actions a>svg:last-child{margin-left:auto}.workspace-grid{display:grid;grid-template-columns:minmax(300px,.72fr) minmax(0,1.28fr);gap:16px}.create-card,.sessions-card{padding:22px}.create-card{display:grid;align-content:start;gap:17px}.create-card label{display:grid;gap:7px}.template-info{gap:10px;border-radius:13px;background:rgba(255,255,255,.06);padding:13px}.template-info div{display:grid;gap:4px}.template-info span{color:#94a3b8;font-size:12px}.create-button{min-height:50px}.sessions-card header{justify-content:space-between;gap:14px}.finished-toggle{gap:7px;color:#94a3b8;font-size:11px;font-weight:800}.finished-toggle input{accent-color:#67e8f9}.sessions-list{display:grid;gap:8px;margin-top:17px}.sessions-list button{display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:12px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.045);padding:12px;color:#fff;text-align:left}.sessions-list button.selected{border-color:rgba(103,232,249,.7);background:rgba(103,232,249,.1)}.session-code{color:#67e8f9;font-size:17px;font-weight:950;letter-spacing:.08em}.session-copy{min-width:0;display:grid;gap:4px}.session-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-copy small{color:#94a3b8}.empty-state{margin-top:17px;border:1px dashed rgba(255,255,255,.15);border-radius:14px;padding:28px;text-align:center}.empty-state p{margin-top:5px;color:#94a3b8}@media(max-width:850px){.workspace-grid{grid-template-columns:1fr}.live-tools{align-items:center;flex-direction:column}.qr-wrap{width:min(100%,270px)}.launch-actions{width:100%}}@media(max-width:560px){.games-page{padding:11px}.topbar{align-items:flex-start}.brand h1{font-size:27px}.nav-link{font-size:11px}.connection-panel{grid-template-columns:1fr}.code-stage{min-height:160px}.code-stage strong{font-size:18vw}.launch-actions{grid-template-columns:1fr}.sessions-card header{align-items:flex-start;flex-direction:column}.sessions-list button{grid-template-columns:78px minmax(0,1fr)}}
 </style>
