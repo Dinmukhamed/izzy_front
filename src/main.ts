@@ -12,6 +12,6 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
-app.use(VueTelegramPlugin)
+if ('Telegram' in window) app.use(VueTelegramPlugin)
 axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL
 app.mount('#app')
