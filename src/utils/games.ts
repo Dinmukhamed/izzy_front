@@ -1,61 +1,57 @@
-export const GAMES = [
+export type RegistrationStatus = 'open' | 'closed' | 'sold_out'
+
+export type LandingGame = {
+  id: number
+  slug: string
+  title: string
+  name: string
+  shortName: string
+  startsAt: string
+  venue: string
+  address: string
+  registrationStatus: RegistrationStatus
+}
+
+export const GAMES: LandingGame[] = [
   {
-    id: 79,
-    title: 'Ultra Music Mix#79',
-    name: 'Все эпохи и жанры',
-    shortName: 'Ultra Music Mix#79: Все эпохи и жанры',
-    date: '24 сентября 2026, 19:30',
+    id: 3,
+    slug: 'izzy-mix-3',
+    title: 'Izzy Mix #3',
+    name: 'Кино, сериалы, мультики',
+    shortName: 'Izzy Mix #3: Кино, сериалы, мультики',
+    startsAt: '2026-10-01T19:30:00+05:00',
     venue: 'Maroon',
-    address: ' ул. Жамбыла, 154'
+    address: 'ул. Жамбыла, 154',
+    registrationStatus: 'open',
   },
-  /*
-  {
-    id: 76,
-    title: 'Ultra Music Mix#75',
-    name: 'Зарубежная Музыка',
-    shortName: 'Ultra Music Mix#73: Зарубежная Музыка',
-    date: '29 августа 2026, 18:00',
-    venue: 'Sintra',
-    address: ' БЦ Almaty Towers, ул. Байзакова 280'
-  },*/
 ]
 
-const monthMap: Record<string, number> = {
-  января: 0,
-  февраля: 1,
-  марта: 2,
-  апреля: 3,
-  мая: 4,
-  июня: 5,
-  июля: 6,
-  августа: 7,
-  сентября: 8,
-  октября: 9,
-  ноября: 10,
-  декабря: 11,
+const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'Asia/Almaty',
+})
+
+const timeFormatter = new Intl.DateTimeFormat('ru-RU', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'Asia/Almaty',
+})
+
+export function getGameBySlug(slug: string) {
+  return GAMES.find((game) => game.slug === slug) || null
 }
 
-export function parseRuDate(dateStr: string): Date {
-  const [datePart, timePart] = dateStr.split(', ')
-  const [day, monthRu, year] = datePart.split(' ')
-  const [hours, minutes] = timePart.split(':')
-
-  return new Date(
-    Number(year),
-    monthMap[monthRu],
-    Number(day),
-    Number(hours),
-    Number(minutes)
-  )
+export function getGameStart(game: LandingGame) {
+  return new Date(game.startsAt)
 }
 
-export function getNearestThursday(from = new Date()): Date {
-  const result = new Date(from)
-  const day = result.getDay() // Sun=0 ... Thu=4
+export function isGameRegistrationAvailable(game: LandingGame, now = new Date()) {
+  return game.registrationStatus === 'open' && getGameStart(game).getTime() >= now.getTime()
+}
 
-  const diff = (4 - day + 7) % 7
-  result.setDate(result.getDate() + diff)
-  result.setHours(23, 59, 59, 999) // include whole day
-
-  return result
+export function formatGameDate(game: LandingGame) {
+  const startsAt = getGameStart(game)
+  return `${dateFormatter.format(startsAt)}, ${timeFormatter.format(startsAt)}`
 }

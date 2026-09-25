@@ -22,7 +22,8 @@ const submit = async () => {
   try {
     const response = await joinQuiz(code.value.trim().toUpperCase(), name.value.trim())
     window.localStorage.setItem(`izzy-player:${response.state.code}`, response.player.id)
-    await router.push(`/quiz/${response.state.code}/player?playerId=${response.player.id}`)
+    window.localStorage.setItem(`izzy-player-token:${response.state.code}`, response.playerToken)
+    await router.push(`/quiz/${response.state.code}/player`)
   } catch (error) {
     errorMessage.value = getQuizErrorMessage(error, 'Не получилось войти в игру')
   } finally {
@@ -41,11 +42,11 @@ const submit = async () => {
       <form class="join-form" @submit.prevent="submit">
         <label>
           <span>Код игры</span>
-          <input v-model="code" type="text" inputmode="text" autocomplete="off" placeholder="ABC123" />
+          <input v-model="code" type="text" inputmode="text" autocomplete="off" maxlength="12" placeholder="ABC123" />
         </label>
         <label>
           <span>Имя игрока</span>
-          <input v-model="name" type="text" autocomplete="name" placeholder="Например: Дима" />
+          <input v-model="name" type="text" autocomplete="name" minlength="2" maxlength="32" placeholder="Например: Дима" />
         </label>
 
         <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>

@@ -3,6 +3,7 @@ import { getQuizApiUrl } from '@/services/quizConfig'
 import type {
   CreateQuizTemplateInput,
   CreateSessionResponse,
+  AuthenticatedPlayerState,
   HostQuizState,
   JoinQuizResponse,
   PlayerQuizState,
@@ -75,6 +76,10 @@ export function getQuizErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+export function isQuizUnauthorizedError(error: unknown) {
+  return axios.isAxiosError(error) && error.response?.status === 401
+}
+
 export async function uploadQuizMedia(file: File, token: string) {
   const formData = new FormData()
   formData.append('file', file)
@@ -118,6 +123,14 @@ export async function getHostState(code: string, token: string) {
 
 export async function getPlayerState(code: string) {
   const { data } = await quizApi.get<PlayerQuizState>(`/sessions/${code}`)
+
+  return data
+}
+
+export async function getAuthenticatedPlayerState(code: string, playerToken: string) {
+  const { data } = await quizApi.get<AuthenticatedPlayerState>(`/sessions/${code}/player`, {
+    headers: adminHeaders(playerToken),
+  })
 
   return data
 }

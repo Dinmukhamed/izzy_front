@@ -15,6 +15,7 @@ export type QuizPlayer = {
   name: string
   score: number
   connected: boolean
+  accessRevoked?: boolean
 }
 
 export type QuizOption = {
@@ -47,6 +48,7 @@ export type QuizTemplate = {
 
 export type QuizAnswer = {
   id: string
+  requestId?: string
   playerId: string
   questionId: string
   optionId: string
@@ -79,7 +81,18 @@ export type HostQuizState = PlayerQuizState & {
 
 export type JoinQuizResponse = {
   player: QuizPlayer
+  playerToken: string
   state: PlayerQuizState
+}
+
+export type AuthenticatedPlayerState = {
+  player: QuizPlayer
+  state: PlayerQuizState
+}
+
+export type QuizAnswerAck = {
+  answer: QuizAnswer
+  duplicate: boolean
 }
 
 export type CreateSessionResponse = {

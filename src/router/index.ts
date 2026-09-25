@@ -20,6 +20,11 @@ const router = createRouter({
       component: HomeView,
     },
     {
+      path: '/register/:slug',
+      name: 'game-registration',
+      component: HomeView,
+    },
+    {
       path: '/music',
       name: 'music',
       component: () => import('@/views/MusicView.vue'),

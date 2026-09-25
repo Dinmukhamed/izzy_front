@@ -106,14 +106,20 @@ const validationIssues = computed(() => {
 
   if (!isConnected.value) issues.push('Сначала подключитесь к API с admin token')
   if (!title.value.trim()) issues.push('Укажите название шаблона')
+  if (title.value.trim().length > 120) issues.push('Название шаблона: максимум 120 символов')
   if (!questions.value.length) issues.push('Добавьте хотя бы один вопрос')
+  if (questions.value.length > 100) issues.push('В шаблоне может быть максимум 100 вопросов')
 
   questions.value.forEach((question, index) => {
     const questionNumber = index + 1
     if (!question.text.trim()) issues.push(`Вопрос ${questionNumber}: заполните текст`)
+    if (question.text.trim().length > 500) issues.push(`Вопрос ${questionNumber}: максимум 500 символов`)
     if (question.options.length !== 4) issues.push(`Вопрос ${questionNumber}: должно быть ровно 4 ответа`)
     if (question.options.some((option) => !option.trim())) {
       issues.push(`Вопрос ${questionNumber}: заполните все 4 ответа`)
+    }
+    if (question.options.some((option) => option.trim().length > 180)) {
+      issues.push(`Вопрос ${questionNumber}: ответ может содержать максимум 180 символов`)
     }
     if (question.correctOptionIndex < 0 || question.correctOptionIndex > 3) {
       issues.push(`Вопрос ${questionNumber}: выберите правильный ответ`)
@@ -123,6 +129,9 @@ const validationIssues = computed(() => {
     }
     if (question.kind !== 'text' && !question.mediaUrl.trim()) {
       issues.push(`Вопрос ${questionNumber}: загрузите медиафайл или укажите ссылку`)
+    }
+    if (question.mediaUrl.trim().length > 2048) {
+      issues.push(`Вопрос ${questionNumber}: ссылка на файл слишком длинная`)
     }
   })
 
@@ -315,12 +324,14 @@ async function removeTemplate() {
 }
 
 function addQuestion() {
+  if (questions.value.length >= 100) return
   const question = createDraftQuestion()
   questions.value.push(question)
   collapsedQuestionIds.value.delete(question.clientId)
 }
 
 function duplicateQuestion(index: number) {
+  if (questions.value.length >= 100) return
   const source = questions.value[index]
   if (!source) return
   const duplicate = createDraftQuestion(source)
@@ -585,6 +596,7 @@ onBeforeUnmount(() => {
             <input
               v-model="title"
               type="text"
+              maxlength="120"
               placeholder="Например: Музыкальная разминка"
               :class="{ invalid: showValidation && !title.trim() }"
             />
@@ -605,7 +617,7 @@ onBeforeUnmount(() => {
             <h3>Всегда четыре варианта ответа</h3>
             <p>Таймер live-игры пока общий — 20 секунд.</p>
           </div>
-          <button class="secondary-button" type="button" @click="addQuestion">
+          <button class="secondary-button" type="button" :disabled="questions.length >= 100" @click="addQuestion">
             <Plus :size="18" />
             Добавить вопрос
           </button>
@@ -649,7 +661,7 @@ onBeforeUnmount(() => {
                   :disabled="questionIndex === questions.length - 1"
                   @click="moveQuestion(questionIndex, 1)"
                 ><ChevronDown :size="17" /></button>
-                <button type="button" aria-label="Дублировать вопрос" @click="duplicateQuestion(questionIndex)">
+                <button type="button" aria-label="Дублировать вопрос" :disabled="questions.length >= 100" @click="duplicateQuestion(questionIndex)">
                   <Copy :size="17" />
                 </button>
                 <button
@@ -668,6 +680,7 @@ onBeforeUnmount(() => {
                 <textarea
                   v-model="question.text"
                   rows="2"
+                  maxlength="500"
                   placeholder="Напишите вопрос"
                   :class="{ invalid: showValidation && !question.text.trim() }"
                 />
@@ -703,6 +716,7 @@ onBeforeUnmount(() => {
                 <input
                   v-model="question.mediaUrl"
                   type="text"
+                  maxlength="2048"
                   placeholder="Или вставьте ссылку на файл"
                   :class="{ invalid: showValidation && !question.mediaUrl.trim() }"
                 />
@@ -732,6 +746,7 @@ onBeforeUnmount(() => {
                     <input
                       v-model="question.options[optionIndex]"
                       type="text"
+                      maxlength="180"
                       :placeholder="`Вариант ${answerLabels[optionIndex]}`"
                     />
                     <Check v-if="question.correctOptionIndex === optionIndex" :size="19" />
@@ -742,7 +757,7 @@ onBeforeUnmount(() => {
           </article>
         </section>
 
-        <button class="add-question-button" type="button" @click="addQuestion">
+        <button class="add-question-button" type="button" :disabled="questions.length >= 100" @click="addQuestion">
           <Plus :size="20" />
           Добавить ещё один вопрос
         </button>

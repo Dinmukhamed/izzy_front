@@ -1,20 +1,34 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { audioSamples, imgSamples, textSamples } from '@/utils/samples'
 import {
   CalendarDays,
   CheckCircle2,
   Instagram,
+  Link,
   MapPin,
   Music2,
+  Share2,
   Sparkles,
   Trophy,
   Users,
   X,
 } from 'lucide-vue-next'
 import TgIcon from '@/assets/tg.svg'
-import { vMaska } from "maska/vue"
-import { GAMES, parseRuDate } from '@/utils/games'
+import { vMaska } from 'maska/vue'
+import {
+  GAMES,
+  formatGameDate,
+  getGameBySlug,
+  isGameRegistrationAvailable,
+  type LandingGame,
+} from '@/utils/games'
+
+const route = useRoute()
+const router = useRouter()
+
+// SECURITY TODO: move Telegram delivery server-side and rotate this browser-exposed bot token.
 const botToken = import.meta.env.VITE_BOT_TOKEN
 const chatId = import.meta.env.VITE_CHAT_ID
 
@@ -43,7 +57,7 @@ const sampleQuestions = reactive<Record<QuestionType, SampleQuestion[]>>({
 const currentType = ref<QuestionType>('text')
 const currentIndex = ref(0)
 const selectedAnswer = ref<number | null>(null)
-const selectedGame = ref<string | null>(null)
+const selectedGame = ref<LandingGame | null>(null)
 
 const currentQuestion = computed(() => {
   return sampleQuestions[currentType.value][currentIndex.value] || null
@@ -84,6 +98,10 @@ function nextQuestion() {
 
 const isModalOpen = ref(false)
 const isSubmitted = ref(false)
+const modalDialog = ref<HTMLElement | null>(null)
+const successHeading = ref<HTMLElement | null>(null)
+let previouslyFocusedElement: HTMLElement | null = null
+let previousBodyOverflow = ''
 
 const teamName = ref('')
 const captainName = ref('')
@@ -98,18 +116,77 @@ const errors = ref({
   teamSize: '',
 })
 
-function openRegistration(gameName: string) {
-  selectedGame.value = gameName
-  isModalOpen.value = true
+const availableGames = computed(() =>
+  GAMES
+    .filter((game) => new Date(game.startsAt).getTime() >= Date.now())
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+)
+
+const featuredGame = computed(() => availableGames.value[0] || null)
+const canRegisterSelectedGame = computed(() =>
+  selectedGame.value ? isGameRegistrationAvailable(selectedGame.value) : false,
+)
+
+const scheduleClass = computed(() => {
+  if (availableGames.value.length === 1) return 'schedule-list schedule-list--single'
+  if (availableGames.value.length === 2) return 'schedule-list schedule-list--two'
+
+  return 'schedule-list'
+})
+
+function resetRegistrationForm() {
   isSubmitted.value = false
+  isLoading.value = false
   teamName.value = ''
   captainName.value = ''
   phoneNumber.value = ''
+  teamSize.value = null
+  isGuestPlayer.value = false
+  errorMessage.value = ''
   clearErrors()
 }
 
-function closeRegistration() {
+async function showRegistration(game: LandingGame | null) {
+  resetRegistrationForm()
+  selectedGame.value = game
+  if (!isModalOpen.value) {
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  }
+  isModalOpen.value = true
+
+  await nextTick()
+  const autofocusTarget = modalDialog.value?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)')
+  ;(autofocusTarget || modalDialog.value)?.focus()
+}
+
+function hideRegistration() {
+  if (!isModalOpen.value) return
   isModalOpen.value = false
+  document.body.style.overflow = previousBodyOverflow
+  void nextTick(() => previouslyFocusedElement?.focus())
+}
+
+function openRegistration(game: LandingGame, event?: Event) {
+  previouslyFocusedElement = event?.currentTarget instanceof HTMLElement
+    ? event.currentTarget
+    : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+
+  if (route.name === 'game-registration' && route.params.slug === game.slug) {
+    void showRegistration(game)
+    return
+  }
+
+  void router.push({ name: 'game-registration', params: { slug: game.slug } })
+}
+
+function closeRegistration() {
+  hideRegistration()
+  if (route.name === 'game-registration') {
+    void router.replace({ name: 'home', hash: '#schedule' })
+  }
 }
 
 function clearErrors() {
@@ -138,14 +215,18 @@ function validateForm() {
     errors.value.phoneNumber = 'Введите корректный номер телефона'
     isValid = false
   }
-  if (!teamSize.value) {
+  if (!isGuestPlayer.value && !teamSize.value) {
     errors.value.teamSize = 'Укажите количество участников'
-    return
+    isValid = false
   }
 
-  if (Number.isNaN(numericTeamSize) || numericTeamSize < 1 || numericTeamSize > 12) {
+  if (
+    !isGuestPlayer.value &&
+    teamSize.value &&
+    (Number.isNaN(numericTeamSize) || numericTeamSize < 1 || numericTeamSize > 12)
+  ) {
     errors.value.teamSize = 'Количество участников от 1 до 12'
-    return
+    isValid = false
   }
 
   return isValid
@@ -153,39 +234,42 @@ function validateForm() {
 
 const isLoading = ref(false)
 const errorMessage = ref('')
+
 const submitForm = async () => {
-  if (isLoading.value) return
+  if (isLoading.value || !selectedGame.value || !canRegisterSelectedGame.value) return
+  errorMessage.value = ''
+
   try {
     if (validateForm()) {
       isLoading.value = true
       const payload = {
-        game: selectedGame.value,
-        captainName: captainName.value,
-        teamName: isGuestPlayer.value ? 'No team' : teamName.value,
+        game: selectedGame.value.shortName,
+        captainName: captainName.value.trim(),
+        teamName: isGuestPlayer.value ? 'No team' : teamName.value.trim(),
         phoneNumber: phoneNumber.value,
-        teamSize: teamSize.value,
+        teamSize: isGuestPlayer.value ? '1' : teamSize.value,
       }
       const message = `
       <b>🎮 Новая регистрация</b>
 
       <b>Игра:</b>
-      ${payload.game}
+      ${escapeTelegramHtml(payload.game)}
 
       <b>Капитан:</b>
-      ${payload.captainName}
+      ${escapeTelegramHtml(payload.captainName)}
 
       <b>Команда:</b>
-      ${payload.teamName}
+      ${escapeTelegramHtml(payload.teamName)}
 
       <b>Игроков:</b>
-      ${payload.teamSize}
+      ${escapeTelegramHtml(String(payload.teamSize))}
 
       <b>Телефон:</b>
       <a href="tel:${payload.phoneNumber.replace(/\s|\(|\)|-/g, '')}">
-      ${payload.phoneNumber}
+      ${escapeTelegramHtml(payload.phoneNumber)}
       </a>
       `
-      const BOT_TOKEN = botToken // ⚠️ keep private if possible
+      const BOT_TOKEN = botToken
       const CHAT_ID = chatId
       const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -198,58 +282,25 @@ const submitForm = async () => {
         })
       })
       const data = await response.json()
-      if (data.ok) {
+      if (response.ok && data.ok) {
         isSubmitted.value = true
-        teamSize.value = null
+        await nextTick()
+        successHeading.value?.focus()
       } else {
         errorMessage.value = 'Произошла ошибка при отправке формы. Пожалуйста, попробуйте снова.'
       }
-      console.log(response)
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error registering team:', error)
-    if (error.response && error.response.data && error.response.data.message) {
-      errorMessage.value = error.response.data.message
-    } else {
-      errorMessage.value = 'Произошла ошибка при отправке формы. Пожалуйста, попробуйте снова.'
-    }
+    errorMessage.value = 'Не удалось отправить регистрацию. Проверьте интернет и попробуйте ещё раз.'
   } finally {
     isLoading.value = false
   }
 }
 
 function clickOutside(e: MouseEvent) {
-  if ((e.target as HTMLElement).id === 'modal-bg') {
-    closeRegistration()
-  }
+  if (e.target === e.currentTarget) closeRegistration()
 }
-
-const now = new Date()
-// const nearestThursday = getNearestThursday(now)
-
-const availableGames = computed(() => {
-  return GAMES.filter(game => {
-    const gameDate = parseRuDate(game.date)
-
-    return (
-      gameDate >= now
-      // && gameDate <= nearestThursday
-    )
-  })
-})
-
-const featuredGame = computed(() => availableGames.value[0] || null)
-
-function formatGameDate(date: string) {
-  return date.replace(/\s+\d{4}(?=,)/, '')
-}
-
-const scheduleClass = computed(() => {
-  if (availableGames.value.length === 1) return 'schedule-list schedule-list--single'
-  if (availableGames.value.length === 2) return 'schedule-list schedule-list--two'
-
-  return 'schedule-list'
-})
 
 function onTeamSizeBlur() {
   if (teamSize.value === null || teamSize.value === '') return
@@ -263,6 +314,105 @@ function onTeamSizeBlur() {
   if (value < 1) teamSize.value = '1'
   else if (value > 12) teamSize.value = '12'
   else teamSize.value = String(value)
+}
+
+function onGuestPlayerChange() {
+  errors.value.teamName = ''
+  errors.value.teamSize = ''
+  if (isGuestPlayer.value) {
+    teamName.value = ''
+    teamSize.value = '1'
+  } else {
+    teamSize.value = null
+  }
+}
+
+function registrationStatusLabel(game: LandingGame) {
+  if (game.registrationStatus === 'sold_out') return 'Мест нет'
+  if (game.registrationStatus === 'closed') return 'Регистрация закрыта'
+  return 'Открыта запись'
+}
+
+function handleModalKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeRegistration()
+    return
+  }
+  if (event.key !== 'Tab' || !modalDialog.value) return
+
+  const focusable = Array.from(
+    modalDialog.value.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.offsetParent !== null)
+  if (!focusable.length) return
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
+const copiedGameSlug = ref('')
+let copiedLabelTimer: number | undefined
+
+async function shareGame(game: LandingGame) {
+  const url = new URL(
+    router.resolve({ name: 'game-registration', params: { slug: game.slug } }).href,
+    window.location.origin,
+  ).toString()
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: game.shortName, text: `Регистрация на ${game.shortName}`, url })
+      return
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+    }
+  }
+
+  try {
+    await copyText(url)
+    copiedGameSlug.value = game.slug
+    if (copiedLabelTimer) window.clearTimeout(copiedLabelTimer)
+    copiedLabelTimer = window.setTimeout(() => { copiedGameSlug.value = '' }, 2_000)
+  } catch {
+    copiedGameSlug.value = ''
+  }
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // Some browsers expose Clipboard API but deny access outside a trusted context.
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('Could not copy the registration link')
+}
+
+function escapeTelegramHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 function getGameClass(id: number) {
@@ -283,6 +433,23 @@ function getGameClass(id: number) {
       return 'game-pop'
   }
 }
+
+watch(
+  () => [route.name, route.params.slug] as const,
+  ([routeName, slug]) => {
+    if (routeName === 'game-registration') {
+      void showRegistration(getGameBySlug(String(slug || '')))
+    } else {
+      hideRegistration()
+    }
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = previousBodyOverflow
+  if (copiedLabelTimer) window.clearTimeout(copiedLabelTimer)
+})
 </script>
 
 <template>
@@ -377,7 +544,7 @@ function getGameClass(id: number) {
           <div class="mt-7 space-y-4">
             <div class="event-row">
               <CalendarDays class="h-5 w-5 text-fuchsia-300" />
-              <span>{{ formatGameDate(featuredGame.date) }}</span>
+              <span>{{ formatGameDate(featuredGame) }}</span>
             </div>
             <div class="event-row">
               <MapPin class="h-5 w-5 text-cyan-300" />
@@ -425,9 +592,12 @@ function getGameClass(id: number) {
               <div class="game-card__shade"></div>
               <div class="game-card__content">
                 <div class="game-card__intro">
-                  <div class="mb-5 inline-flex items-center gap-2 bg-black/35 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white backdrop-blur">
+                  <div
+                    class="registration-badge mb-5 inline-flex items-center gap-2 bg-black/35 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white backdrop-blur"
+                    :class="`is-${game.registrationStatus}`"
+                  >
                     <CheckCircle2 class="h-4 w-4 text-emerald-300" />
-                    Открыта запись
+                    {{ registrationStatusLabel(game) }}
                   </div>
                   <div class="game-card__heading">
                     <h3 class="game-card__title">
@@ -443,7 +613,7 @@ function getGameClass(id: number) {
                   <div class="game-card__details">
                     <div class="game-meta">
                       <CalendarDays class="h-5 w-5" />
-                      <span>{{ formatGameDate(game.date) }}</span>
+                      <span>{{ formatGameDate(game) }}</span>
                     </div>
                     <div class="game-meta">
                       <MapPin class="h-5 w-5" />
@@ -452,10 +622,22 @@ function getGameClass(id: number) {
                   </div>
                   <div class="game-card__action">
                     <button
-                      @click="openRegistration(game.shortName)"
+                      type="button"
+                      @click="openRegistration(game, $event)"
                       class="register-button"
+                      :disabled="!isGameRegistrationAvailable(game)"
                     >
-                      Записаться
+                      {{ game.registrationStatus === 'sold_out' ? 'Мест нет' : game.registrationStatus === 'closed' ? 'Регистрация закрыта' : 'Записаться' }}
+                    </button>
+                    <button
+                      type="button"
+                      class="share-button"
+                      :aria-label="`Поделиться регистрацией на ${game.shortName}`"
+                      @click="shareGame(game)"
+                    >
+                      <Link v-if="copiedGameSlug === game.slug" class="h-4 w-4" />
+                      <Share2 v-else class="h-4 w-4" />
+                      {{ copiedGameSlug === game.slug ? 'Ссылка скопирована' : 'Поделиться' }}
                     </button>
                   </div>
                 </div>
@@ -600,8 +782,16 @@ function getGameClass(id: number) {
       id="modal-bg"
       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm"
       @click="clickOutside"
+      @keydown="handleModalKeydown"
     >
-      <div class="relative max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 text-slate-950 shadow-2xl sm:p-8">
+      <div
+        ref="modalDialog"
+        class="registration-modal relative max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 text-slate-950 shadow-2xl sm:p-8"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="registration-title"
+        tabindex="-1"
+      >
         <button
           @click="closeRegistration"
           class="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
@@ -610,86 +800,162 @@ function getGameClass(id: number) {
           <X class="h-5 w-5" />
         </button>
 
-        <div v-if="isSubmitted" class="text-center">
-          <h3 class="mb-4 pr-8 text-3xl font-black text-slate-950">Спасибо за регистрацию!</h3>
-          <p class="mb-6 text-slate-600">Мы скоро свяжемся с вами.</p>
+        <div v-if="!selectedGame" class="registration-state text-center">
+          <p class="eyebrow text-fuchsia-700">Регистрация</p>
+          <h3 id="registration-title" class="mt-2 pr-8 text-3xl font-black text-slate-950">Игра не найдена</h3>
+          <p class="mt-4 text-slate-600">Возможно, ссылка устарела. Посмотрите актуальные игры в расписании.</p>
           <button
             @click="closeRegistration"
-            class="primary-action primary-action--dark mx-auto"
+            class="primary-action primary-action--dark mx-auto mt-6"
           >
-            Закрыть
+            К расписанию
           </button>
+        </div>
+
+        <div v-else-if="!canRegisterSelectedGame" class="registration-state text-center">
+          <p class="eyebrow text-fuchsia-700">Регистрация закрыта</p>
+          <h3 id="registration-title" class="mt-2 pr-8 text-3xl font-black text-slate-950">{{ selectedGame.shortName }}</h3>
+          <div class="modal-game-meta mt-5 text-left">
+            <div><CalendarDays /><span>{{ formatGameDate(selectedGame) }}</span></div>
+            <div><MapPin /><span>{{ selectedGame.venue }}, {{ selectedGame.address }}</span></div>
+          </div>
+          <p class="mt-5 text-slate-600">
+            {{ selectedGame.registrationStatus === 'sold_out' ? 'Все места уже заняты.' : 'На эту игру больше нельзя зарегистрироваться.' }}
+          </p>
+          <button @click="closeRegistration" class="primary-action primary-action--dark mx-auto mt-6">К расписанию</button>
+        </div>
+
+        <div v-else-if="isSubmitted" class="registration-state text-center">
+          <CheckCircle2 class="success-mark mx-auto h-14 w-14" />
+          <h3
+            id="registration-title"
+            ref="successHeading"
+            class="mt-4 pr-8 text-3xl font-black text-slate-950"
+            tabindex="-1"
+          >
+            Регистрация отправлена!
+          </h3>
+          <p class="mt-3 text-slate-600">Мы проверим заявку и напишем на указанный номер с подтверждением.</p>
+          <div class="modal-game-meta mt-5 text-left">
+            <strong>{{ selectedGame.shortName }}</strong>
+            <div><CalendarDays /><span>{{ formatGameDate(selectedGame) }}</span></div>
+            <div><MapPin /><span>{{ selectedGame.venue }}, {{ selectedGame.address }}</span></div>
+          </div>
+          <button @click="closeRegistration" class="primary-action primary-action--dark mx-auto mt-6">Готово</button>
         </div>
 
         <div v-else>
           <p class="eyebrow mb-2 text-fuchsia-700">Регистрация</p>
-          <h3 class="mb-1 pr-8 text-3xl font-black leading-tight text-slate-950">Записаться на игру</h3>
-          <h4 class="mb-6 text-lg font-bold text-slate-600">{{ selectedGame }}</h4>
+          <h3 id="registration-title" class="mb-1 pr-8 text-3xl font-black leading-tight text-slate-950">Записаться на игру</h3>
+          <h4 class="text-lg font-bold text-slate-700">{{ selectedGame.shortName }}</h4>
+          <div class="modal-game-meta my-5">
+            <div><CalendarDays /><span>{{ formatGameDate(selectedGame) }}</span></div>
+            <div><MapPin /><span>{{ selectedGame.venue }}, {{ selectedGame.address }}</span></div>
+          </div>
 
-          <form @submit.prevent="submitForm" class="space-y-4">
-            <div>
-              <input
-                type="text"
-                v-model="teamName"
-                :disabled="isGuestPlayer"
-                placeholder="Название команды"
-                class="form-field disabled:bg-slate-100 disabled:text-slate-400"
-              />
-              <p v-if="errors.teamName" class="text-red-500 text-sm mt-1">{{ errors.teamName }}</p>
+          <button type="button" class="modal-share-button" @click="shareGame(selectedGame)">
+            <Link v-if="copiedGameSlug === selectedGame.slug" />
+            <Share2 v-else />
+            {{ copiedGameSlug === selectedGame.slug ? 'Ссылка скопирована' : 'Поделиться этой игрой' }}
+          </button>
 
-              <div class="flex items-center mt-4">
+          <form @submit.prevent="submitForm" class="registration-form mt-5" novalidate>
+            <div v-if="!isGuestPlayer">
+              <label class="form-field-wrap" for="registration-team-name">
+                <span>Название команды</span>
                 <input
-                  type="checkbox"
-                  id="isGuestPlayer"
-                  v-model="isGuestPlayer"
-                  class="h-4 w-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                  id="registration-team-name"
+                  v-model="teamName"
+                  type="text"
+                  autocomplete="organization"
+                  maxlength="80"
+                  placeholder="Например, Знатоки"
+                  class="form-field"
+                  data-autofocus
+                  :aria-invalid="Boolean(errors.teamName)"
+                  aria-describedby="registration-team-error"
                 />
-                <label for="isGuestPlayer" class="ml-2 text-sm font-semibold text-slate-700">Я легионер</label>
-              </div>
+              </label>
+              <p v-if="errors.teamName" id="registration-team-error" class="form-error">{{ errors.teamName }}</p>
+            </div>
+
+            <label class="guest-toggle" for="isGuestPlayer">
+              <input
+                id="isGuestPlayer"
+                v-model="isGuestPlayer"
+                type="checkbox"
+                class="h-4 w-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                @change="onGuestPlayerChange"
+              />
+              <span><strong>Я легионер</strong><small>Приду один — помогите найти команду</small></span>
+            </label>
+
+            <div>
+              <label class="form-field-wrap" for="registration-captain-name">
+                <input
+                  id="registration-captain-name"
+                  v-model="captainName"
+                  type="text"
+                  autocomplete="name"
+                  maxlength="80"
+                  placeholder="Как к вам обращаться"
+                  class="form-field"
+                  :data-autofocus="isGuestPlayer ? '' : undefined"
+                  :aria-invalid="Boolean(errors.captainName)"
+                  aria-describedby="registration-captain-error"
+                />
+                <span>Ваше имя</span>
+              </label>
+              <p v-if="errors.captainName" id="registration-captain-error" class="form-error">{{ errors.captainName }}</p>
             </div>
 
             <div>
-              <input
-                type="text"
-                v-model="captainName"
-                placeholder="Ваше имя"
-                class="form-field"
-              />
-              <p v-if="errors.captainName" class="text-red-500 text-sm mt-1">{{ errors.captainName }}</p>
+              <label class="form-field-wrap" for="registration-phone">
+                <span>Номер телефона</span>
+                <input
+                  id="registration-phone"
+                  v-model="phoneNumber"
+                  v-maska="'+7 (###) ###-##-##'"
+                  type="tel"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  placeholder="+7 (___) ___-__-__"
+                  class="form-field"
+                  :aria-invalid="Boolean(errors.phoneNumber)"
+                  aria-describedby="registration-phone-error"
+                />
+              </label>
+              <p v-if="errors.phoneNumber" id="registration-phone-error" class="form-error">{{ errors.phoneNumber }}</p>
             </div>
 
-            <div>
-              <input
-                type="text"
-                v-model="phoneNumber"
-                placeholder="Номер телефона"
-                v-maska="'+7 (###) ###-##-##'"
-                class="form-field"
-              />
-              <p v-if="errors.phoneNumber" class="text-red-500 text-sm mt-1">{{ errors.phoneNumber }}</p>
+            <div v-if="!isGuestPlayer">
+              <label class="form-field-wrap" for="registration-team-size">
+                <span>Игроков в команде</span>
+                <input
+                  id="registration-team-size"
+                  v-model="teamSize"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="12"
+                  placeholder="От 1 до 12"
+                  class="form-field"
+                  :aria-invalid="Boolean(errors.teamSize)"
+                  aria-describedby="registration-size-error"
+                  @blur="onTeamSizeBlur"
+                />
+              </label>
+              <p v-if="errors.teamSize" id="registration-size-error" class="form-error">{{ errors.teamSize }}</p>
             </div>
 
-            <div>
-              <input
-                type="number"
-                v-model="teamSize"
-                min="1"
-                max="12"
-                @blur="onTeamSizeBlur"
-                placeholder="Игроков в команде"
-                class="form-field"
-              />
-              <p v-if="errors.teamSize" class="text-red-500 text-sm mt-1">{{ errors.teamSize }}</p>
-            </div>
-
-            <div v-if="errorMessage" class="text-red-500 text-sm mt-4 text-center">
+            <div v-if="errorMessage" class="submit-error" role="alert">
               {{ errorMessage }}
             </div>
 
             <button
               type="submit"
               :disabled="isLoading"
-              class="primary-action primary-action--dark w-full justify-center disabled:cursor-wait disabled:opacity-70"
+              class="primary-action primary-action--dark mt-1 w-full justify-center disabled:cursor-wait disabled:opacity-70"
             >
               <svg
                 v-if="isLoading"
@@ -970,6 +1236,17 @@ function getGameClass(id: number) {
   justify-self: start;
 }
 
+.registration-badge.is-closed,
+.registration-badge.is-sold_out {
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.registration-badge.is-closed svg,
+.registration-badge.is-sold_out svg {
+  color: #cbd5e1;
+}
+
 .game-card__heading {
   display: grid;
   gap: 8px;
@@ -1038,26 +1315,52 @@ function getGameClass(id: number) {
 
 .game-card__action {
   align-self: stretch;
+  display: grid;
+  gap: 9px;
 }
 
-.register-button {
+.register-button,
+.share-button {
   display: inline-flex;
   width: 100%;
   min-height: 52px;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   border-radius: 8px;
-  color: #090b13;
-  background: white;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   transition: transform 0.2s ease, background 0.2s ease;
 }
 
+.register-button {
+  color: #090b13;
+  background: white;
+}
+
+.share-button {
+  min-height: 43px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.73rem;
+}
+
 .register-button:hover {
   transform: translateY(-2px);
   background: #67e8f9;
+}
+
+.register-button:disabled {
+  color: #64748b;
+  background: #e2e8f0;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.share-button:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 @media (min-width: 1024px) {
@@ -1137,21 +1440,154 @@ function getGameClass(id: number) {
   padding: 28px;
 }
 
+.registration-modal {
+  overscroll-behavior: contain;
+}
+
+.modal-game-meta {
+  display: grid;
+  gap: 8px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  padding: 12px 13px;
+  color: #334155;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.modal-game-meta > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.modal-game-meta svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  color: #a21caf;
+}
+
+.modal-share-button {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #d8b4fe;
+  border-radius: 8px;
+  color: #86198f;
+  background: #fdf4ff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.modal-share-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.registration-form {
+  display: grid;
+  gap: 11px;
+}
+
+.form-field-wrap {
+  position: relative;
+  display: block;
+}
+
+.form-field-wrap > span {
+  position: absolute;
+  top: 7px;
+  left: 14px;
+  z-index: 1;
+  color: #64748b;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .form-field {
   width: 100%;
-  min-height: 48px;
+  min-height: 54px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  padding: 0 14px;
+  padding: 20px 14px 5px;
   color: #0f172a;
+  background: white;
   font-weight: 700;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.form-field::placeholder {
+  color: #a8b1bf;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
 .form-field:focus {
   border-color: #d946ef;
   box-shadow: 0 0 0 3px rgba(217, 70, 239, 0.16);
+}
+
+.form-field[aria-invalid='true'] {
+  border-color: #ef4444;
+}
+
+.form-error {
+  margin: 4px 3px 0;
+  color: #dc2626;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.guest-toggle {
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.guest-toggle > span {
+  display: grid;
+  gap: 1px;
+  color: #334155;
+  font-size: 0.82rem;
+}
+
+.guest-toggle small {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.submit-error {
+  border-radius: 8px;
+  color: #b91c1c;
+  background: #fef2f2;
+  padding: 9px 11px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.success-mark {
+  border-radius: 50%;
+  color: #059669;
+  background: #d1fae5;
+  padding: 10px;
 }
 
 @media (max-width: 767px) {

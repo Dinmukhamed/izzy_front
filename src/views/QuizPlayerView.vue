@@ -2,16 +2,22 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Clock3, Crown, Pause, Send, Trophy, WifiOff, X } from 'lucide-vue-next'
-import { getPlayerState } from '@/services/quizApi'
+import { getAuthenticatedPlayerState, getQuizErrorMessage, isQuizUnauthorizedError } from '@/services/quizApi'
 import { createQuizSocket, type QuizSocketAck } from '@/services/quizSocket'
-import type { PlayerQuizState, QuizAnswer } from '@/types/quiz'
+import type { AuthenticatedPlayerState, PlayerQuizState, QuizAnswerAck } from '@/types/quiz'
 
 const route = useRoute()
 const router = useRouter()
 const code = String(route.params.code || '').toUpperCase()
-const playerId = ref(String(route.query.playerId || window.localStorage.getItem(`izzy-player:${code}`) || ''))
+const playerStorageKey = `izzy-player:${code}`
+const tokenStorageKey = `izzy-player-token:${code}`
+const pendingStorageKey = `izzy-pending-answer:${code}`
+const playerId = ref(String(window.localStorage.getItem(playerStorageKey) || ''))
+const playerToken = ref(String(window.localStorage.getItem(tokenStorageKey) || ''))
 const state = ref<PlayerQuizState | null>(null)
-const selectedOptionId = ref('')
+const pendingAnswer = ref<PendingAnswer | null>(readPendingAnswer())
+const selectedOptionId = ref(pendingAnswer.value?.optionId || '')
+const confirmedQuestionId = ref('')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 const isConnected = ref(false)
@@ -27,8 +33,14 @@ const currentAnswer = computed(() => {
     (answer) => answer.playerId === playerId.value && answer.questionId === state.value?.currentQuestion?.id,
   )
 })
+const hasAcceptedAnswer = computed(() => Boolean(
+  state.value?.currentQuestion && playerId.value && (
+    confirmedQuestionId.value === state.value.currentQuestion.id ||
+    state.value.answeredPlayerIds.includes(playerId.value)
+  ),
+))
 const hasAnswered = computed(() =>
-  isSubmitting.value || Boolean(playerId.value && state.value?.answeredPlayerIds.includes(playerId.value)),
+  isSubmitting.value || Boolean(pendingAnswer.value) || hasAcceptedAnswer.value,
 )
 const remainingMs = computed(() => {
   if (!state.value?.phaseEndsAt) return 0
@@ -41,6 +53,7 @@ const canAnswer = computed(() =>
   Boolean(state.value?.currentQuestion) &&
   state.value?.status === 'question_open' &&
   remainingMs.value > 0 &&
+  isConnected.value &&
   !hasAnswered.value,
 )
 const sortedPlayers = computed(() =>
@@ -76,51 +89,131 @@ function applyState(nextState: PlayerQuizState) {
   if (state.value && nextState.stateVersion < state.value.stateVersion) return
   state.value = nextState
   serverOffsetMs.value = new Date(nextState.serverNow).getTime() - Date.now()
+
+  const questionId = nextState.currentQuestion?.id
+  if (questionId && playerId.value && nextState.answeredPlayerIds.includes(playerId.value)) {
+    confirmedQuestionId.value = questionId
+    clearPendingAnswer()
+  } else if (pendingAnswer.value && pendingAnswer.value.questionId !== questionId) {
+    clearPendingAnswer()
+  } else if (pendingAnswer.value && nextState.status !== 'question_open') {
+    clearPendingAnswer()
+  }
+}
+
+function applyAuthenticatedState(payload: AuthenticatedPlayerState) {
+  playerId.value = payload.player.id
+  window.localStorage.setItem(playerStorageKey, payload.player.id)
+  applyState(payload.state)
 }
 
 function returnToJoin() {
-  window.localStorage.removeItem(`izzy-player:${code}`)
+  window.localStorage.removeItem(playerStorageKey)
+  window.localStorage.removeItem(tokenStorageKey)
+  window.localStorage.removeItem(pendingStorageKey)
   void router.replace(`/quiz/join?code=${code}`)
 }
 
 async function loadState() {
   try {
-    const nextState = await getPlayerState(code)
-    applyState(nextState)
-    if (!nextState.players.some((player) => player.id === playerId.value)) returnToJoin()
+    const payload = await getAuthenticatedPlayerState(code, playerToken.value)
+    applyAuthenticatedState(payload)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не получилось открыть игру'
+    if (isQuizUnauthorizedError(error)) returnToJoin()
+    errorMessage.value = getQuizErrorMessage(error, 'Не получилось открыть игру')
   }
 }
 
 function joinPlayerRoom() {
-  socket.emit('player:join-room', { code, playerId: playerId.value }, (response: QuizSocketAck<PlayerQuizState>) => {
+  socket.emit('player:join-room', { code, playerToken: playerToken.value }, (response: QuizSocketAck<AuthenticatedPlayerState>) => {
     if (!response.ok) {
-      if (response.error === 'Player not found') returnToJoin()
+      if (response.error === 'Player session is invalid') returnToJoin()
       else errorMessage.value = response.error
       return
     }
     errorMessage.value = ''
-    applyState(response.data)
+    applyAuthenticatedState(response.data)
+    if (pendingAnswer.value && !hasAcceptedAnswer.value) sendPendingAnswer()
   })
 }
 
 function submitAnswer(optionId: string) {
   if (!canAnswer.value || !playerId.value) return
   selectedOptionId.value = optionId
+  pendingAnswer.value = {
+    questionId: state.value!.currentQuestion!.id,
+    optionId,
+    requestId: createRequestId(),
+  }
+  persistPendingAnswer()
+  sendPendingAnswer()
+}
+
+function sendPendingAnswer() {
+  const pending = pendingAnswer.value
+  if (!pending || isSubmitting.value) return
+  if (!socket.connected) {
+    errorMessage.value = 'Нет связи. Ответ отправится после переподключения.'
+    return
+  }
+
   isSubmitting.value = true
   errorMessage.value = ''
-  socket.emit('player:answer', { code, playerId: playerId.value, optionId }, (response: QuizSocketAck<QuizAnswer>) => {
-    isSubmitting.value = false
-    if (!response.ok) {
-      errorMessage.value = response.error === 'Time is up' ? 'Время вышло' : response.error
-      return
-    }
-  })
+  socket.timeout(5_000).emit(
+    'player:answer',
+    {
+      code,
+      playerToken: playerToken.value,
+      optionId: pending.optionId,
+      requestId: pending.requestId,
+    },
+    (timeoutError: Error | null, response?: QuizSocketAck<QuizAnswerAck>) => {
+      isSubmitting.value = false
+      if (timeoutError || !response) {
+        errorMessage.value = 'Не получили подтверждение. Проверяем ответ…'
+        void reconcileAnswer()
+        return
+      }
+      if (!response.ok) {
+        if (response.error === 'Player session is invalid') returnToJoin()
+        errorMessage.value = response.error === 'Time is up' ? 'Время вышло' : response.error
+        void reconcileAnswer()
+        return
+      }
+      confirmedQuestionId.value = response.data.answer.questionId
+      clearPendingAnswer()
+      errorMessage.value = ''
+    },
+  )
+}
+
+async function reconcileAnswer() {
+  try {
+    const payload = await getAuthenticatedPlayerState(code, playerToken.value)
+    applyAuthenticatedState(payload)
+  } catch (error) {
+    if (isQuizUnauthorizedError(error)) returnToJoin()
+    errorMessage.value = getQuizErrorMessage(error, 'Не удалось проверить ответ. Нажми «Повторить».')
+  }
+}
+
+function retryPendingAnswer() {
+  sendPendingAnswer()
+}
+
+function persistPendingAnswer() {
+  if (!pendingAnswer.value) return
+  window.localStorage.setItem(pendingStorageKey, JSON.stringify(pendingAnswer.value))
+}
+
+function clearPendingAnswer() {
+  pendingAnswer.value = null
+  isSubmitting.value = false
+  window.localStorage.removeItem(pendingStorageKey)
 }
 
 onMounted(() => {
-  if (!playerId.value) {
+  if (!playerToken.value) {
     returnToJoin()
     return
   }
@@ -140,8 +233,40 @@ onBeforeUnmount(() => {
 
 watch(
   () => state.value?.currentQuestion?.id,
-  () => { selectedOptionId.value = ''; isSubmitting.value = false },
+  (questionId, previousQuestionId) => {
+    if (questionId === previousQuestionId) return
+    confirmedQuestionId.value = ''
+    if (!pendingAnswer.value || pendingAnswer.value.questionId !== questionId) {
+      clearPendingAnswer()
+      selectedOptionId.value = ''
+    }
+  },
 )
+
+type PendingAnswer = {
+  questionId: string
+  optionId: string
+  requestId: string
+}
+
+function readPendingAnswer(): PendingAnswer | null {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(pendingStorageKey) || 'null') as Partial<PendingAnswer> | null
+    if (!parsed?.questionId || !parsed.optionId || !parsed.requestId) return null
+    return parsed as PendingAnswer
+  } catch {
+    return null
+  }
+}
+
+function createRequestId() {
+  if (typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID()
+  const bytes = window.crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 </script>
 
 <template>
@@ -158,7 +283,16 @@ watch(
       <section v-if="state?.status === 'question_open' && state.currentQuestion" class="game-screen question-screen">
         <div class="round-line"><span>Вопрос {{ (state.currentQuestionIndex || 0) + 1 }} / {{ state.questionCount }}</span><strong :class="{ urgent: remainingSeconds <= 5 }"><Clock3 :size="16" /> {{ remainingSeconds }}</strong></div>
         <div class="timer-track"><span :style="{ width: `${timerProgress}%` }" /></div>
-        <div class="question-copy"><h1>{{ state.currentQuestion.text }}</h1><p v-if="hasAnswered"><Send :size="17" /> Ответ принят — ждём остальных</p><p v-else>Выбери один вариант</p></div>
+        <div class="question-copy">
+          <h1>{{ state.currentQuestion.text }}</h1>
+          <p v-if="hasAcceptedAnswer"><Send :size="17" /> Ответ принят — ждём остальных</p>
+          <p v-else-if="isSubmitting"><Send :size="17" /> Отправляем ответ…</p>
+          <div v-else-if="pendingAnswer" class="answer-retry">
+            <span>Подтверждение не получено</span>
+            <button type="button" @click="retryPendingAnswer">Повторить</button>
+          </div>
+          <p v-else>Выбери один вариант</p>
+        </div>
         <div class="option-grid">
           <button v-for="(option,index) in state.currentQuestion.options" :key="option.id" type="button" :disabled="!canAnswer" :class="[`option-${index + 1}`, { selected: selectedOptionId === option.id }]" @click="submitAnswer(option.id)">
             <span>{{ ['A','B','C','D'][index] }}</span><strong>{{ option.text }}</strong>
@@ -201,4 +335,5 @@ watch(
 
 <style scoped>
 .player-page{height:100vh;height:100dvh;overflow:hidden;background:radial-gradient(circle at 85% 8%,rgba(103,232,249,.16),transparent 28%),radial-gradient(circle at 10% 95%,rgba(217,70,239,.14),transparent 32%),#070b1d;color:#fff;padding:max(9px,env(safe-area-inset-top)) 11px max(9px,env(safe-area-inset-bottom))}.phone-shell{width:min(100%,560px);height:100%;min-height:0;margin:auto;display:flex;flex-direction:column;gap:8px}.compact-header,.brand-lockup,.player-summary,.round-line,.question-copy p,.leaderboard-heading,.connection-note{display:flex;align-items:center}.compact-header{min-height:40px;justify-content:space-between;gap:10px}.brand-lockup{gap:7px}.brand-lockup img{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.1);padding:5px}.brand-lockup div,.player-summary{display:grid}.brand-lockup span,.player-summary span{color:#94a3b8;font-size:9px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}.brand-lockup strong{font-size:16px;letter-spacing:.13em}.player-summary{justify-items:end}.player-summary strong{color:#67e8f9;font-size:17px}.connection-note{justify-content:center;gap:6px;border-radius:9px;background:rgba(245,158,11,.13);padding:6px;color:#fde68a;font-size:11px;font-weight:850}.error-text{border-radius:9px;background:rgba(127,29,29,.9);padding:7px 10px;color:#fecaca;font-size:11px;font-weight:800}.game-screen{flex:1 1 0;min-height:0;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:23px;background:rgba(11,17,40,.82);padding:clamp(13px,3.6vw,19px)}.question-screen{display:grid;grid-template-rows:auto auto minmax(78px,.68fr) minmax(0,2fr);gap:9px}.round-line{justify-content:space-between;color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.round-line strong{display:flex;align-items:center;gap:5px;color:#67e8f9;font-size:16px;font-variant-numeric:tabular-nums}.round-line strong.urgent{color:#fb7185}.timer-track{height:6px;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.1)}.timer-track span{display:block;height:100%;background:linear-gradient(90deg,#d946ef,#67e8f9);transition:width .1s linear}.question-copy{min-height:0;display:flex;flex-direction:column;justify-content:center}.question-copy h1{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:4;font-size:clamp(21px,6vw,35px);line-height:1.04;font-weight:950}.question-copy p{gap:5px;margin-top:6px;color:#94a3b8;font-size:11px;font-weight:800}.question-copy p:has(svg){color:#67e8f9}.option-grid{min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:8px}.option-grid button{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:7px;border:2px solid transparent;border-radius:17px;padding:clamp(9px,2.8vw,14px);color:#fff;text-align:left}.option-1{background:#b91c1c}.option-2{background:#1d4ed8}.option-3{background:#b45309}.option-4{background:#15803d}.option-grid button>span{display:grid;width:28px;height:28px;place-items:center;border-radius:8px;background:rgba(255,255,255,.2);font-weight:950}.option-grid button strong{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:4;font-size:clamp(15px,4.2vw,21px);line-height:1.06;font-weight:950}.option-grid button.selected{border-color:#fff;transform:scale(.97);box-shadow:0 0 0 3px rgba(103,232,249,.6)}.option-grid button:disabled:not(.selected){opacity:.4}.center-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}.eyebrow{color:#67e8f9;font-size:10px;font-weight:950;letter-spacing:.15em;text-transform:uppercase}.center-screen h1,.leaderboard-heading h1,.final-screen h1{margin-top:6px;font-size:clamp(32px,9vw,50px);line-height:.98;font-weight:950}.countdown-number{font-size:clamp(130px,38vw,220px);line-height:.8;font-weight:950;animation:pop .7s ease}.result-icon,.waiting-pulse,.trophy-icon{display:grid;place-items:center;border-radius:50%}.result-icon{width:clamp(70px,20vw,100px);height:clamp(70px,20vw,100px);margin-bottom:14px;background:#fb7185;box-shadow:0 0 0 10px rgba(251,113,133,.12)}.result-icon svg{width:55%;height:55%;stroke-width:3.4}.is-correct .result-icon{background:#4ade80;color:#052e16}.correct-answer{max-width:420px;margin-top:14px;color:#cbd5e1;font-size:clamp(14px,3.8vw,18px)}.correct-answer strong{color:#fff}.result-stats{width:min(100%,420px);display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:clamp(19px,5vh,35px)}.result-stats div{display:grid;gap:4px;border-radius:14px;background:rgba(255,255,255,.07);padding:11px 6px}.result-stats span{color:#94a3b8;font-size:9px;font-weight:850;text-transform:uppercase}.result-stats strong{font-size:clamp(18px,5vw,25px)}.leaderboard-screen{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:12px}.leaderboard-heading{gap:10px}.trophy-icon{width:45px;height:45px;flex:0 0 45px;background:#facc15;color:#422006}.leaderboard-heading h1{font-size:clamp(24px,6.7vw,36px)}.leaderboard-list{min-height:0;display:grid;align-content:center;gap:6px}.leaderboard-list li{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid transparent;border-radius:14px;background:rgba(255,255,255,.07);padding:clamp(7px,1.6vh,11px)}.leaderboard-list li.current{border-color:rgba(103,232,249,.7);background:rgba(103,232,249,.13)}.leaderboard-list li.separated{margin-top:4px;border-style:dashed}.rank{display:flex;align-items:center;gap:3px;color:#94a3b8;font-weight:950}.rank svg{color:#facc15}.leaderboard-list li>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(14px,3.8vw,18px)}.leaderboard-list small{margin-left:6px;color:#67e8f9;font-size:8px;text-transform:uppercase}.score{color:#67e8f9;font-size:clamp(15px,4.2vw,20px);font-weight:950}.host-note{color:#94a3b8;text-align:center;font-size:10px;font-weight:800}.waiting-pulse{width:72px;height:72px;margin-bottom:17px;background:rgba(103,232,249,.14);color:#67e8f9;animation:pulse 1.8s infinite}.waiting-screen p{max-width:310px;margin-top:14px;color:#94a3b8;font-size:14px}.final-screen{display:flex;flex-direction:column;align-items:center;text-align:center}.final-trophy{width:62px;height:62px;color:#facc15}.personal-final{width:min(100%,330px);display:grid;gap:4px;margin-top:16px;border:1px solid rgba(103,232,249,.35);border-radius:17px;background:rgba(103,232,249,.1);padding:13px}.personal-final span{color:#94a3b8;font-size:10px;text-transform:uppercase}.personal-final strong{font-size:38px}.personal-final b{color:#67e8f9}.final-screen ol{width:100%;display:grid;gap:6px;margin-top:15px}.final-screen li{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;border-radius:13px;background:rgba(255,255,255,.07);padding:9px 11px;text-align:left}.final-screen li>span{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;background:#facc15;color:#422006;font-weight:950}.final-screen li>b{color:#67e8f9}@keyframes pulse{50%{transform:scale(1.08)}}@keyframes pop{from{opacity:0;transform:scale(1.4)}to{opacity:1;transform:scale(1)}}@media(max-height:680px){.game-screen{padding:11px;border-radius:18px}.question-screen{grid-template-rows:auto auto minmax(65px,.55fr) minmax(0,2fr)}.option-grid button{border-radius:13px}.result-stats{margin-top:15px}.leaderboard-list{gap:4px}.leaderboard-list li{padding-block:6px}}
+.answer-retry{display:flex;align-items:center;gap:8px;margin-top:6px;color:#fde68a;font-size:11px;font-weight:850}.answer-retry button{border:1px solid rgba(253,230,138,.45);border-radius:8px;background:rgba(245,158,11,.15);padding:5px 8px;color:#fde68a;font-size:10px;font-weight:900}
 </style>

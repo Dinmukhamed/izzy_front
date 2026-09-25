@@ -2,10 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import QRCode from 'qrcode'
-import { ExternalLink, FastForward, Lock, Pause, Play, Square, Unlock, Users } from 'lucide-vue-next'
+import { ExternalLink, FastForward, Lock, Pause, Play, Square, Unlock, UserX, Users } from 'lucide-vue-next'
 import { getHostState } from '@/services/quizApi'
 import { createQuizSocket, getStoredAdminToken, type QuizSocketAck } from '@/services/quizSocket'
-import type { HostQuizState, QuizStatus } from '@/types/quiz'
+import type { HostQuizState, QuizPlayer, QuizStatus } from '@/types/quiz'
 
 const route = useRoute()
 const code = String(route.params.code || '').toUpperCase()
@@ -108,6 +108,25 @@ function runAction(event: string) {
   })
 }
 
+function revokePlayer(player: QuizPlayer) {
+  if (isActionPending.value || player.accessRevoked) return
+  if (!window.confirm(`Отключить доступ игрока «${player.name}»? Вернуться с этого телефона уже не получится.`)) return
+  isActionPending.value = true
+  errorMessage.value = ''
+  socket.emit(
+    'host:revoke-player',
+    { code, token: token.value, playerId: player.id },
+    (response: QuizSocketAck<HostQuizState>) => {
+      isActionPending.value = false
+      if (!response.ok) {
+        errorMessage.value = response.error
+        return
+      }
+      applyState(response.data)
+    },
+  )
+}
+
 async function generateQr() {
   qrDataUrl.value = await QRCode.toDataURL(joinUrl.value, { margin: 1, width: 240 })
 }
@@ -198,7 +217,8 @@ onBeforeUnmount(() => {
             <header><div><span class="eyebrow">Участники</span><h2>{{ playerCountLabel(state.players.length) }}</h2></div><Users /></header>
             <ol>
               <li v-for="(player, index) in sortedPlayers" :key="player.id">
-                <span>{{ index + 1 }}</span><strong :class="{ offline: !player.connected }">{{ player.name }}</strong><b>{{ player.score }}</b>
+                <span>{{ index + 1 }}</span><strong :class="{ offline: !player.connected }">{{ player.name }}<small v-if="player.accessRevoked">Доступ отключён</small></strong><b>{{ player.score }}</b>
+                <button type="button" :disabled="isActionPending || player.accessRevoked" :title="`Отключить доступ: ${player.name}`" @click="revokePlayer(player)"><UserX :size="17" /></button>
               </li>
             </ol>
           </article>
@@ -217,4 +237,5 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .control-page{min-height:100vh;background:radial-gradient(circle at 8% 5%,rgba(103,232,249,.13),transparent 27%),radial-gradient(circle at 92% 10%,rgba(217,70,239,.12),transparent 28%),#070b1d;color:#fff;padding:clamp(16px,3vw,36px)}.control-shell{width:min(100%,1240px);margin:auto}.topbar,.top-actions,.status-card,.players-card header,.players-card li,.secondary-actions,.topbar a,.primary-action,.secondary-actions button{display:flex;align-items:center}.topbar{justify-content:space-between;gap:18px;margin-bottom:18px}.topbar>div:first-child>span,.eyebrow,.status-card span{color:#67e8f9;font-size:11px;font-weight:950;letter-spacing:.18em;text-transform:uppercase}.topbar h1{font-size:clamp(30px,4vw,54px);line-height:1;font-weight:950}.top-actions{gap:10px}.topbar a,.secondary-actions button{gap:8px;border:1px solid rgba(255,255,255,.13);border-radius:13px;background:rgba(255,255,255,.07);padding:13px 16px;color:#fff;font-weight:900}.connection{border-radius:999px;background:rgba(244,63,94,.12);padding:8px 11px;color:#fda4af;font-size:11px;font-weight:900;text-transform:uppercase}.connection.online{background:rgba(16,185,129,.13);color:#6ee7b7}.panel,.status-card{border:1px solid rgba(255,255,255,.12);border-radius:22px;background:rgba(11,17,40,.86);box-shadow:0 24px 70px rgba(0,0,0,.22)}.status-card{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;padding:16px}.status-card div{display:grid;gap:6px}.status-card strong{font-size:clamp(18px,2vw,28px)}.main-control{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:clamp(20px,3vw,34px)}.control-copy h2{max-width:850px;margin-top:8px;font-size:clamp(26px,3.2vw,44px);line-height:1.05}.control-copy p{margin-top:10px;color:#94a3b8;font-weight:800}.primary-action{min-width:230px;justify-content:center;gap:10px;border-radius:17px;background:#67e8f9;padding:18px 24px;color:#061022;font-size:20px;font-weight:950;text-transform:uppercase}.secondary-actions{grid-column:1/-1;flex-wrap:wrap;gap:9px;padding-top:15px;border-top:1px solid rgba(255,255,255,.09)}.secondary-actions .danger{border-color:rgba(251,113,133,.3);color:#fecdd3;background:rgba(244,63,94,.1)}.control-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.6fr);gap:16px;margin-top:16px}.players-card,.join-card{padding:22px}.players-card header{justify-content:space-between}.players-card h2{margin-top:4px;font-size:30px}.players-card ol{display:grid;gap:8px;margin-top:17px}.players-card li{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:11px;border-radius:13px;background:rgba(255,255,255,.06);padding:11px 13px}.players-card li>span{display:grid;width:32px;height:32px;place-items:center;border-radius:9px;background:rgba(103,232,249,.13);color:#67e8f9;font-weight:950}.players-card li>b{color:#67e8f9}.offline{opacity:.45}.join-card{display:grid;justify-items:center;align-content:start;gap:10px;text-align:center}.join-card img{width:min(100%,230px);margin-top:6px;border-radius:18px;background:#fff;padding:9px}.join-card>strong{font-size:40px;letter-spacing:.12em}.join-card p{max-width:100%;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}.error{margin-bottom:14px;border-radius:13px;background:rgba(127,29,29,.75);padding:12px;color:#fecaca;font-weight:850}@media(max-width:800px){.topbar{align-items:flex-start;flex-direction:column}.status-card{grid-template-columns:repeat(2,1fr)}.main-control,.control-grid{grid-template-columns:1fr}.primary-action{width:100%}.top-actions{width:100%;justify-content:space-between}}
+.players-card li{grid-template-columns:38px minmax(0,1fr) auto 32px}.players-card li>strong small{display:block;color:#fda4af;font-size:8px;text-transform:uppercase}.players-card li>button{display:grid;width:32px;height:32px;place-items:center;border-radius:9px;background:rgba(244,63,94,.11);color:#fda4af}.players-card li>button:disabled{opacity:.28}
 </style>
