@@ -786,7 +786,7 @@ onBeforeUnmount(() => {
     >
       <div
         ref="modalDialog"
-        class="registration-modal relative max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 text-slate-950 shadow-2xl sm:p-8"
+        class="registration-modal relative max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 text-slate-950 shadow-2xl sm:p-7"
         role="dialog"
         aria-modal="true"
         aria-labelledby="registration-title"
@@ -846,20 +846,14 @@ onBeforeUnmount(() => {
 
         <div v-else>
           <p class="eyebrow mb-2 text-fuchsia-700">Регистрация</p>
-          <h3 id="registration-title" class="mb-1 pr-8 text-3xl font-black leading-tight text-slate-950">Записаться на игру</h3>
+          <h3 id="registration-title" class="mb-1 pr-8 text-2xl font-black leading-tight text-slate-950 sm:text-3xl">Записаться на игру</h3>
           <h4 class="text-lg font-bold text-slate-700">{{ selectedGame.shortName }}</h4>
-          <div class="modal-game-meta my-5">
+          <div class="modal-game-meta my-4">
             <div><CalendarDays /><span>{{ formatGameDate(selectedGame) }}</span></div>
             <div><MapPin /><span>{{ selectedGame.venue }}, {{ selectedGame.address }}</span></div>
           </div>
 
-          <button type="button" class="modal-share-button" @click="shareGame(selectedGame)">
-            <Link v-if="copiedGameSlug === selectedGame.slug" />
-            <Share2 v-else />
-            {{ copiedGameSlug === selectedGame.slug ? 'Ссылка скопирована' : 'Поделиться этой игрой' }}
-          </button>
-
-          <form @submit.prevent="submitForm" class="registration-form mt-5" novalidate>
+          <form @submit.prevent="submitForm" class="registration-form mt-4" novalidate>
             <div v-if="!isGuestPlayer">
               <label class="form-field-wrap" for="registration-team-name">
                 <span>Название команды</span>
@@ -869,7 +863,7 @@ onBeforeUnmount(() => {
                   type="text"
                   autocomplete="organization"
                   maxlength="80"
-                  placeholder="Например, Знатоки"
+                  placeholder="Например, Аппарат Президента"
                   class="form-field"
                   data-autofocus
                   :aria-invalid="Boolean(errors.teamName)"
@@ -1468,30 +1462,9 @@ onBeforeUnmount(() => {
   color: #a21caf;
 }
 
-.modal-share-button {
-  display: flex;
-  width: 100%;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid #d8b4fe;
-  border-radius: 8px;
-  color: #86198f;
-  background: #fdf4ff;
-  font-size: 0.78rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-}
-
-.modal-share-button svg {
-  width: 17px;
-  height: 17px;
-}
-
 .registration-form {
   display: grid;
-  gap: 11px;
+  gap: 10px;
 }
 
 .form-field-wrap {
@@ -1515,7 +1488,7 @@ onBeforeUnmount(() => {
 
 .form-field {
   width: 100%;
-  min-height: 54px;
+  min-height: 52px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   padding: 20px 14px 5px;
@@ -1550,7 +1523,7 @@ onBeforeUnmount(() => {
 
 .guest-toggle {
   display: flex;
-  min-height: 45px;
+  min-height: 43px;
   align-items: center;
   gap: 10px;
   border: 1px solid #e2e8f0;
@@ -1588,6 +1561,10 @@ onBeforeUnmount(() => {
   color: #059669;
   background: #d1fae5;
   padding: 10px;
+}
+
+.registration-form .primary-action {
+  min-height: 50px;
 }
 
 @media (max-width: 767px) {
