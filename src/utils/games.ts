@@ -13,17 +13,6 @@ export type LandingGame = {
 }
 
 export const GAMES: LandingGame[] = [
-  {
-    id: 3,
-    slug: 'izzy-mix-3',
-    title: 'Izzy Mix #3',
-    name: 'Кино и Музыка',
-    shortName: 'Izzy Mix #3: Кино и Музыка',
-    startsAt: '2026-10-01T19:30:00+05:00',
-    venue: 'Maroon',
-    address: 'ул. Жамбыла, 154',
-    registrationStatus: 'open',
-  },
 ]
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
