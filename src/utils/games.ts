@@ -13,6 +13,17 @@ export type LandingGame = {
 }
 
 export const GAMES: LandingGame[] = [
+  {
+    id: 80,
+    slug: 'ultra-mix-80',
+    title: 'Ultra Music Mix #80',
+    name: 'Все эпохи и жанры',
+    shortName: 'Ultra Music Mix #80: Все эпохи и жанры',
+    startsAt: '2026-10-08T19:30:00+05:00',
+    venue: 'Maroon',
+    address: 'ул. Жамбыла, 154',
+    registrationStatus: 'open',
+  },
 ]
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
