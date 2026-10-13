@@ -41,7 +41,7 @@ export const GAMES: LandingGame[] = [
     title: 'Izzy Mix #3',
     name: 'KZ и Зарубежка',
     shortName: 'Izzy Mix #3: KZ и Зарубежка',
-    startsAt: '2026-10-13T19:30:00+05:00',
+    startsAt: '2026-10-13T17:15:00+05:00',
     venue: 'Maroon',
     address: 'ул. Жамбыла, 154',
     registrationStatus: 'open',
