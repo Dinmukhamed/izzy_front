@@ -91,7 +91,13 @@ export type AuthenticatedPlayerState = {
 }
 
 export type QuizAnswerAck = {
-  answer: QuizAnswer
+  answer: {
+    id: string
+    requestId?: string
+    questionId: string
+    optionId: string
+    answeredAt: string
+  }
   duplicate: boolean
 }
 
