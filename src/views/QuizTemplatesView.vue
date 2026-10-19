@@ -41,6 +41,8 @@ type DraftQuestion = {
 
 const DEFAULT_DURATION_SECONDS = 20
 const DEFAULT_POINTS = 1000
+const RECOMMENDED_QUESTION_LENGTH = 180
+const MAX_QUESTION_LENGTH = 300
 const statusLabels: Record<QuizTemplate['status'], string> = {
   draft: 'Черновик',
   active: 'Активный',
@@ -113,7 +115,9 @@ const validationIssues = computed(() => {
   questions.value.forEach((question, index) => {
     const questionNumber = index + 1
     if (!question.text.trim()) issues.push(`Вопрос ${questionNumber}: заполните текст`)
-    if (question.text.trim().length > 500) issues.push(`Вопрос ${questionNumber}: максимум 500 символов`)
+    if (question.text.trim().length > MAX_QUESTION_LENGTH) {
+      issues.push(`Вопрос ${questionNumber}: максимум ${MAX_QUESTION_LENGTH} символов`)
+    }
     if (question.options.length !== 4) issues.push(`Вопрос ${questionNumber}: должно быть ровно 4 ответа`)
     if (question.options.some((option) => !option.trim())) {
       issues.push(`Вопрос ${questionNumber}: заполните все 4 ответа`)
@@ -680,10 +684,23 @@ onBeforeUnmount(() => {
                 <textarea
                   v-model="question.text"
                   rows="2"
-                  maxlength="500"
+                  :maxlength="MAX_QUESTION_LENGTH"
                   placeholder="Напишите вопрос"
-                  :class="{ invalid: showValidation && !question.text.trim() }"
+                  :class="{
+                    invalid: showValidation && (!question.text.trim() || question.text.trim().length > MAX_QUESTION_LENGTH),
+                  }"
                 />
+                <div
+                  class="field-meta"
+                  :class="{ warning: question.text.trim().length > RECOMMENDED_QUESTION_LENGTH }"
+                >
+                  <span>
+                    {{ question.text.trim().length > RECOMMENDED_QUESTION_LENGTH
+                      ? 'Длинный вопрос — шрифт в игре автоматически уменьшится'
+                      : `Для лучшей читаемости — до ${RECOMMENDED_QUESTION_LENGTH} символов` }}
+                  </span>
+                  <strong>{{ question.text.length }} / {{ MAX_QUESTION_LENGTH }}</strong>
+                </div>
               </label>
 
               <div class="question-settings">
@@ -870,6 +887,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .question-actions button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; color: #cbd5e1; background: rgba(255,255,255,.045); }
 .question-actions button.danger-icon { color: #fda4af; }
 .question-body { display: grid; gap: 15px; padding: 16px; }
+.field-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; color: #64748b; font-size: 10px; font-weight: 750; }
+.field-meta strong { flex: 0 0 auto; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.field-meta.warning, .field-meta.warning strong { color: #fde68a; }
 .question-settings { display: grid; grid-template-columns: minmax(0,1fr) minmax(180px,.45fr); gap: 11px; }
 .media-row { gap: 10px; align-items: end; }
 .media-row .upload-button { flex: 0 0 auto; }
