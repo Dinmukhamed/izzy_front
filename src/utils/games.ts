@@ -24,6 +24,17 @@ export const GAMES: LandingGame[] = [
     address: 'ул. Манаса 5А',
     registrationStatus: 'open',
   },
+  {
+    id: 84,
+    slug: 'ultra-84',
+    title: 'Ultra Music Mix #84',
+    name: 'Все эпохи и жанры + Halloween',
+    shortName: 'Все эпохи и жанры + Halloween',
+    startsAt: '2026-10-29T19:30:00+05:00',
+    venue: 'Maroon',
+    address: 'Жамбыла 154',
+    registrationStatus: 'open',
+  },
 ]
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
