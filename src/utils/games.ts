@@ -35,6 +35,17 @@ export const GAMES: LandingGame[] = [
     address: 'Жамбыла 154',
     registrationStatus: 'open',
   },
+  {
+    id: 4,
+    slug: 'izzy-mix-4',
+    title: 'Izzy Mix #4',
+    name: 'Зарубежный Рок',
+    shortName: 'Izzy Mix #4: Зарубежный Рок',
+    startsAt: '2026-11-01T17:00:00+05:00',
+    venue: 'Cafe Leffe',
+    address: 'ул. Манаса, 5А',
+    registrationStatus: 'open',
+  },
 ]
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
