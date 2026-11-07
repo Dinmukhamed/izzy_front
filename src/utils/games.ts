@@ -46,6 +46,28 @@ export const GAMES: LandingGame[] = [
     address: 'ул. Манаса, 5А',
     registrationStatus: 'open',
   },
+  {
+    id: 85,
+    slug: 'ultra-mix-85',
+    title: 'Ultra Music Mix #85',
+    name: 'Зарубежная Музыка',
+    shortName: 'Ultra Music Mix #85: Зарубежная Музыка',
+    startsAt: '2026-11-12T19:30:00+05:00',
+    venue: 'Maroon',
+    address: 'ул. Жамбыла, 154',
+    registrationStatus: 'open',
+  },
+  {
+    id: 5,
+    slug: 'izzy-mix-5',
+    title: 'Izzy Mix #5',
+    name: 'Rap vs Rock',
+    shortName: 'Izzy Mix #5: Rap vs Rock',
+    startsAt: '2026-11-15T17:00:00+05:00',
+    venue: 'Бочонок',
+    address: 'ул. Жандосова, 40',
+    registrationStatus: 'open',
+  },
 ]
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
