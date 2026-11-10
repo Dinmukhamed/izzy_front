@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { Check, Clock3, Crown, Pause, Trophy, Users, WifiOff } from 'lucide-vue-next'
 import { vFitText } from '@/directives/fitText'
 import { getPlayerState } from '@/services/quizApi'
+import { preloadImages } from '@/services/imagePreloader'
 import { createQuizSocket, type QuizSocketAck } from '@/services/quizSocket'
 import type { PlayerQuizState } from '@/types/quiz'
 
@@ -16,9 +17,11 @@ const qrDataUrl = ref('')
 const now = ref(Date.now())
 const serverOffsetMs = ref(0)
 const isConnected = ref(false)
+const brokenImageUrls = ref(new Set<string>())
 const socket = createQuizSocket()
 const hostQuestionFit = { min: 24, max: 108 }
 let clockTimer: number | undefined
+let preloadBatchKey = ''
 
 const joinUrl = computed(() => `${window.location.origin}/quiz/join?code=${code}`)
 const sortedPlayers = computed(() =>
@@ -46,6 +49,9 @@ const correctOption = computed(() =>
   ),
 )
 const latestPlayers = computed(() => [...(state.value?.players || [])].slice(-10).reverse())
+const currentQuestionImageUrl = computed(() =>
+  state.value?.currentQuestion?.media?.type === 'image' ? state.value.currentQuestion.media.url : '',
+)
 
 function phaseDurationMs(status: PlayerQuizState['status']) {
   if (status === 'countdown') return 3_000
@@ -59,6 +65,26 @@ function applyState(nextState: PlayerQuizState) {
   if (state.value && nextState.stateVersion < state.value.stateVersion) return
   state.value = nextState
   serverOffsetMs.value = new Date(nextState.serverNow).getTime() - Date.now()
+  startImagePreload(nextState.preloadImageUrls || [])
+}
+
+function startImagePreload(urls: string[]) {
+  const uniqueUrls = Array.from(new Set(urls.filter(Boolean)))
+  const batchKey = uniqueUrls.slice().sort().join('|')
+  if (batchKey === preloadBatchKey) return
+  preloadBatchKey = batchKey
+
+  void preloadImages(uniqueUrls)
+}
+
+function markImageBroken(url: string) {
+  brokenImageUrls.value = new Set(brokenImageUrls.value).add(url)
+}
+
+function markImageLoaded(url: string) {
+  const nextBrokenUrls = new Set(brokenImageUrls.value)
+  nextBrokenUrls.delete(url)
+  brokenImageUrls.value = nextBrokenUrls
 }
 
 async function loadState() {
@@ -154,7 +180,11 @@ onBeforeUnmount(() => {
         <h1>Приготовьтесь</h1>
       </section>
 
-      <section v-else-if="state.status === 'question_open' && state.currentQuestion" class="question-stage">
+      <section
+        v-else-if="state.status === 'question_open' && state.currentQuestion"
+        class="question-stage"
+        :class="{ 'has-image': currentQuestionImageUrl }"
+      >
         <div class="stage-meta">
           <span>Вопрос {{ currentQuestionNumber }} / {{ state.questionCount }}</span>
           <span><Users :size="19" /> Ответили {{ answeredCount }} / {{ state.players.length }}</span>
@@ -164,11 +194,14 @@ onBeforeUnmount(() => {
             <h1 v-fit-text="hostQuestionFit">{{ state.currentQuestion.text }}</h1>
           </div>
           <img
-            v-if="state.currentQuestion.media?.type === 'image'"
-            :src="state.currentQuestion.media.url"
-            alt=""
+            v-if="currentQuestionImageUrl && !brokenImageUrls.has(currentQuestionImageUrl)"
+            :src="currentQuestionImageUrl"
+            :alt="state.currentQuestion.text"
             class="question-media"
+            @load="markImageLoaded(currentQuestionImageUrl)"
+            @error="markImageBroken(currentQuestionImageUrl)"
           />
+          <div v-else-if="currentQuestionImageUrl" class="question-media-error">Не удалось загрузить изображение</div>
           <audio
             v-if="state.currentQuestion.media?.type === 'audio'"
             :src="state.currentQuestion.media.url"
@@ -239,6 +272,7 @@ onBeforeUnmount(() => {
 .center-state,.question-stage,.leaderboard-stage,.final-stage{min-height:0;border:1px solid rgba(255,255,255,.12);border-radius:30px;background:rgba(11,17,40,.82);box-shadow:0 30px 90px rgba(0,0,0,.25)}.center-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:4vw}.center-state h1{font-size:clamp(48px,7vw,110px);line-height:.95;font-weight:950}.center-state p{margin-top:18px;color:#cbd5e1;font-size:clamp(17px,2vw,28px)}
 .countdown-number{font-size:clamp(150px,25vw,360px);line-height:.78;font-weight:950;animation:countdown .8s ease both}.countdown-state h1{margin-top:3vh;font-size:clamp(36px,5vw,74px)}
 .question-stage{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:2vh;padding:clamp(24px,3vw,48px)}.stage-meta{justify-content:space-between;color:#94a3b8;font-size:clamp(14px,1.5vw,22px);font-weight:900;text-transform:uppercase}.stage-meta span{display:flex;align-items:center;gap:8px}.question-main{min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2vh;text-align:center}.question-main h1{max-width:1500px;font-size:clamp(48px,6.4vw,108px);line-height:.98;font-weight:950}.question-media{max-width:80%;max-height:38vh;object-fit:contain;border-radius:22px}.question-main audio{width:min(100%,760px)}
+.question-stage.has-image .question-main{display:grid;width:100%;grid-template-rows:minmax(72px,.38fr) minmax(0,1.62fr);justify-items:center}.question-stage.has-image .question-text-box{min-height:72px}.question-stage.has-image .question-media{display:block;width:100%;height:100%;max-width:1500px;max-height:48vh;object-fit:contain}.question-media-error{display:grid;width:min(100%,1000px);height:100%;min-height:180px;place-items:center;border:1px dashed rgba(251,113,133,.5);border-radius:22px;background:rgba(127,29,29,.18);color:#fecdd3;font-size:clamp(18px,2vw,30px);font-weight:900}
 .question-text-box{width:min(100%,1500px);min-height:0;flex:1;display:flex;align-items:center;overflow:hidden}.question-text-box h1{width:100%;max-width:none;max-height:100%;overflow:hidden}
 .host-timer{gap:18px}.host-timer>strong{display:flex;align-items:center;justify-content:center;gap:8px;min-width:108px;color:#67e8f9;font-size:clamp(30px,4vw,56px);font-variant-numeric:tabular-nums}.host-timer>strong.urgent{color:#fb7185}.host-timer>div{height:18px;flex:1;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.1)}.host-timer>div span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#d946ef,#67e8f9);transition:width .1s linear}
 .answer-icon{display:grid;width:clamp(76px,8vw,122px);height:clamp(76px,8vw,122px);place-items:center;border-radius:50%;background:#4ade80;color:#052e16;box-shadow:0 0 0 16px rgba(74,222,128,.1)}.answer-icon svg{width:55%;height:55%;stroke-width:4}.answer-stage p{max-width:1200px;margin-top:3vh}.answer-stage h1{max-width:1400px;margin-top:2vh;color:#4ade80}.answer-stage small{margin-top:3vh;color:#94a3b8;font-size:18px;font-weight:850}

@@ -43,6 +43,8 @@ const DEFAULT_DURATION_SECONDS = 20
 const DEFAULT_POINTS = 1000
 const RECOMMENDED_QUESTION_LENGTH = 180
 const MAX_QUESTION_LENGTH = 300
+const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const statusLabels: Record<QuizTemplate['status'], string> = {
   draft: 'Черновик',
   active: 'Активный',
@@ -372,12 +374,23 @@ async function uploadMedia(question: DraftQuestion, event: Event) {
     input.value = ''
     return
   }
+  if (question.kind === 'image' && !IMAGE_TYPES.has(file.type)) {
+    errorMessage.value = 'Для изображения используйте JPG, PNG или WebP'
+    input.value = ''
+    return
+  }
+  if (question.kind === 'image' && file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    errorMessage.value = 'Изображение должно быть не больше 10 МБ'
+    input.value = ''
+    return
+  }
 
   isUploading.value = true
   clearMessages()
 
   try {
-    const uploadedFile = await uploadQuizMedia(file, connectedToken.value)
+    const preparedFile = question.kind === 'image' ? await optimizeQuizImage(file) : file
+    const uploadedFile = await uploadQuizMedia(preparedFile, connectedToken.value)
     question.mediaUrl = uploadedFile.url
     question.kind = uploadedFile.mimetype.startsWith('audio/') ? 'audio' : 'image'
     successMessage.value = 'Медиафайл загружен'
@@ -387,6 +400,48 @@ async function uploadMedia(question: DraftQuestion, event: Event) {
     isUploading.value = false
     input.value = ''
   }
+}
+
+async function optimizeQuizImage(file: File) {
+  const objectUrl = URL.createObjectURL(file)
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const preview = new window.Image()
+      preview.onload = () => resolve(preview)
+      preview.onerror = () => reject(new Error('Не удалось прочитать изображение'))
+      preview.src = objectUrl
+    })
+    const maxSide = 1920
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight))
+
+    if (scale === 1 && file.size <= 1024 * 1024) return file
+
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) return file
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+    const optimizedBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/webp', 0.9)
+    })
+    if (!optimizedBlob) return file
+
+    const fileName = file.name.replace(/\.[^.]+$/, '') || 'quiz-image'
+    return new File([optimizedBlob], `${fileName}.webp`, {
+      type: 'image/webp',
+      lastModified: Date.now(),
+    })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+function removeMedia(question: DraftQuestion) {
+  question.mediaUrl = ''
+  clearMessages()
 }
 
 function toQuestionInput(question: DraftQuestion): CreateQuizQuestionInput {
@@ -722,10 +777,14 @@ onBeforeUnmount(() => {
                 <label class="upload-button">
                   <Image v-if="question.kind === 'image'" :size="18" />
                   <Music v-else :size="18" />
-                  {{ isUploading ? 'Загрузка…' : 'Загрузить файл' }}
+                  {{ isUploading
+                    ? 'Загрузка…'
+                    : question.mediaUrl
+                      ? 'Заменить файл'
+                      : 'Загрузить файл' }}
                   <input
                     type="file"
-                    :accept="question.kind === 'audio' ? 'audio/*' : 'image/*'"
+                    :accept="question.kind === 'audio' ? 'audio/*' : 'image/jpeg,image/png,image/webp'"
                     :disabled="isUploading"
                     @change="uploadMedia(question, $event)"
                   />
@@ -737,6 +796,14 @@ onBeforeUnmount(() => {
                   placeholder="Или вставьте ссылку на файл"
                   :class="{ invalid: showValidation && !question.mediaUrl.trim() }"
                 />
+              </div>
+
+              <div v-if="question.kind === 'image' && question.mediaUrl.trim()" class="image-preview">
+                <img :src="question.mediaUrl" :alt="`Предпросмотр вопроса ${questionIndex + 1}`" />
+                <div>
+                  <span>Так изображение сохранено в вопросе</span>
+                  <button type="button" @click="removeMedia(question)"><Trash2 :size="16" /> Удалить</button>
+                </div>
               </div>
 
               <fieldset class="answers-fieldset">
@@ -895,6 +962,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .media-row .upload-button { flex: 0 0 auto; }
 .media-row > input { flex: 1; }
 .upload-button input { display: none; }
+.image-preview { min-height: 190px; overflow: hidden; display: grid; grid-template-columns: minmax(0,1fr) 210px; gap: 12px; border: 1px solid rgba(103,232,249,.18); border-radius: 15px; background: rgba(5,9,25,.58); padding: 10px; }
+.image-preview img { width: 100%; height: 260px; object-fit: contain; border-radius: 10px; background: rgba(0,0,0,.25); }
+.image-preview > div { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 12px; color: #94a3b8; font-size: 12px; font-weight: 800; }
+.image-preview button { display: flex; align-items: center; gap: 7px; border: 1px solid rgba(251,113,133,.25); border-radius: 10px; background: rgba(244,63,94,.1); padding: 9px 11px; color: #fecdd3; font-weight: 900; }
 .answers-fieldset { min-width: 0; }
 .answers-fieldset legend { margin-bottom: 9px; }
 .answers-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
@@ -939,5 +1010,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .question-validity { display: none; }
   .media-row { align-items: stretch; flex-direction: column; }
   .media-row .upload-button { width: 100%; }
+  .image-preview { grid-template-columns: 1fr; }
+  .image-preview img { height: 210px; }
+  .image-preview > div { align-items: stretch; }
+  .image-preview button { justify-content: center; }
 }
 </style>

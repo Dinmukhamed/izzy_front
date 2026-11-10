@@ -66,6 +66,7 @@ export type PlayerQuizState = {
   currentQuestion: QuizQuestion | null
   currentQuestionIndex: number | null
   questionCount: number
+  preloadImageUrls: string[]
   questionStartedAt: string | null
   phaseEndsAt: string | null
   serverNow: string
