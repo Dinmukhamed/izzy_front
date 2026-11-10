@@ -26,8 +26,8 @@ const isConnected = ref(false)
 const brokenImageUrls = ref(new Set<string>())
 const now = ref(Date.now())
 const serverOffsetMs = ref(0)
+const viewportHeight = ref(window.visualViewport?.height || window.innerHeight)
 const socket = createQuizSocket()
-const playerQuestionFit = { min: 14, max: 35 }
 let clockTimer: number | undefined
 let preloadBatchKey = ''
 
@@ -84,6 +84,38 @@ const resultKind = computed<'correct' | 'wrong' | 'missed'>(() => {
 const currentQuestionImageUrl = computed(() =>
   state.value?.currentQuestion?.media?.type === 'image' ? state.value.currentQuestion.media.url : '',
 )
+const questionLayoutDensity = computed(() => {
+  const question = state.value?.currentQuestion
+  if (!question) return 0
+
+  const questionLength = question.text.trim().length
+  const optionLengths = question.options.map((option) => option.text.trim().length)
+  const longestOption = Math.max(0, ...optionLengths)
+  const totalOptionLength = optionLengths.reduce((total, length) => total + length, 0)
+  let density = 0
+
+  if (questionLength > 100 || longestOption > 45 || totalOptionLength > 150) density = 1
+  if (questionLength > 170 || longestOption > 80 || totalOptionLength > 260 || viewportHeight.value < 720) density = 2
+  if (questionLength > 240 || longestOption > 125 || totalOptionLength > 420 || viewportHeight.value < 610) density = 3
+
+  return density
+})
+const playerQuestionFit = computed(() => {
+  const maxByDensity = [35, 31, 27, 23]
+  const minByDensity = [14, 12, 10, 8]
+  return {
+    min: minByDensity[questionLayoutDensity.value] || 8,
+    max: maxByDensity[questionLayoutDensity.value] || 23,
+  }
+})
+const playerOptionFit = computed(() => {
+  const maxByDensity = [21, 19, 17, 15]
+  const minByDensity = [12, 11, 10, 9]
+  return {
+    min: minByDensity[questionLayoutDensity.value] || 9,
+    max: maxByDensity[questionLayoutDensity.value] || 15,
+  }
+})
 
 function phaseDurationMs(status: PlayerQuizState['status']) {
   if (status === 'countdown') return 3_000
@@ -130,6 +162,10 @@ function markImageLoaded(url: string) {
   const nextBrokenUrls = new Set(brokenImageUrls.value)
   nextBrokenUrls.delete(url)
   brokenImageUrls.value = nextBrokenUrls
+}
+
+function updateViewportHeight() {
+  viewportHeight.value = window.visualViewport?.height || window.innerHeight
 }
 
 function applyAuthenticatedState(payload: AuthenticatedPlayerState) {
@@ -250,6 +286,8 @@ onMounted(() => {
   }
 
   clockTimer = window.setInterval(() => { now.value = Date.now() }, 100)
+  window.addEventListener('resize', updateViewportHeight)
+  window.visualViewport?.addEventListener('resize', updateViewportHeight)
   socket.on('connect', () => { isConnected.value = true; joinPlayerRoom() })
   socket.on('disconnect', () => { isConnected.value = false })
   socket.on('session:state', applyState)
@@ -259,6 +297,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (clockTimer) window.clearInterval(clockTimer)
+  window.removeEventListener('resize', updateViewportHeight)
+  window.visualViewport?.removeEventListener('resize', updateViewportHeight)
   socket.disconnect()
 })
 
@@ -314,7 +354,7 @@ function createRequestId() {
       <section
         v-if="state?.status === 'question_open' && state.currentQuestion"
         class="game-screen question-screen"
-        :class="{ 'has-image': currentQuestionImageUrl }"
+        :class="[{ 'has-image': currentQuestionImageUrl }, `density-${questionLayoutDensity}`]"
       >
         <div class="round-line"><span>Вопрос {{ (state.currentQuestionIndex || 0) + 1 }} / {{ state.questionCount }}</span><strong :class="{ urgent: remainingSeconds <= 5 }"><Clock3 :size="16" /> {{ remainingSeconds }}</strong></div>
         <div class="timer-track"><span :style="{ width: `${timerProgress}%` }" /></div>
@@ -342,7 +382,8 @@ function createRequestId() {
         </div>
         <div class="option-grid">
           <button v-for="(option,index) in state.currentQuestion.options" :key="option.id" type="button" :disabled="!canAnswer" :class="[`option-${index + 1}`, { selected: selectedOptionId === option.id }]" @click="submitAnswer(option.id)">
-            <span>{{ ['A','B','C','D'][index] }}</span><strong>{{ option.text }}</strong>
+            <span>{{ ['A','B','C','D'][index] }}</span>
+            <div class="option-text-box"><strong v-fit-text="playerOptionFit">{{ option.text }}</strong></div>
           </button>
         </div>
       </section>
@@ -390,6 +431,12 @@ function createRequestId() {
 .player-question-media{min-height:0;overflow:hidden;display:grid;place-items:center;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(0,0,0,.2)}
 .player-question-media img{display:block;width:100%;height:100%;max-height:25dvh;object-fit:contain}
 .player-question-media span{padding:12px;color:#fda4af;font-size:11px;font-weight:850;text-align:center}
+.question-screen .option-grid button{display:grid;grid-template-rows:auto minmax(0,1fr);align-items:stretch;justify-content:stretch}
+.option-text-box{min-width:0;min-height:0;display:flex;align-items:center;overflow:hidden}
+.option-grid .option-text-box strong{display:block;width:100%;max-height:100%;overflow:hidden;-webkit-line-clamp:unset}
+.question-screen.density-1{gap:7px;padding:12px}.question-screen.density-1.has-image{grid-template-rows:auto auto minmax(54px,.4fr) minmax(72px,.76fr) minmax(0,1.84fr)}.question-screen.density-1 .player-question-media img{max-height:22dvh}.question-screen.density-1 .option-grid button{gap:5px;padding:8px}.question-screen.density-1 .option-grid button>span{width:25px;height:25px}
+.question-screen.density-2{gap:6px;padding:10px}.question-screen.density-2.has-image{grid-template-rows:auto auto minmax(50px,.38fr) minmax(58px,.6fr) minmax(0,2.02fr)}.question-screen.density-2 .player-question-media{border-radius:11px}.question-screen.density-2 .player-question-media img{max-height:19dvh}.question-screen.density-2 .question-copy p{font-size:10px}.question-screen.density-2 .option-grid{gap:6px}.question-screen.density-2 .option-grid button{gap:4px;border-radius:13px;padding:7px}.question-screen.density-2 .option-grid button>span{width:22px;height:22px;font-size:11px}
+.question-screen.density-3{gap:5px;padding:8px}.question-screen.density-3.has-image{grid-template-rows:auto auto minmax(56px,.42fr) minmax(44px,.4fr) minmax(0,2.18fr)}.question-screen.density-3 .round-line{font-size:9px}.question-screen.density-3 .round-line strong{font-size:14px}.question-screen.density-3 .timer-track{height:4px}.question-screen.density-3 .player-question-media{border-radius:9px}.question-screen.density-3 .player-question-media img{max-height:15dvh}.question-screen.density-3 .question-copy{gap:2px}.question-screen.density-3 .question-copy p{font-size:8px}.question-screen.density-3 .option-grid{gap:5px}.question-screen.density-3 .option-grid button{gap:3px;border-radius:11px;padding:6px}.question-screen.density-3 .option-grid button>span{width:19px;height:19px;border-radius:6px;font-size:10px}
 .answer-retry{display:flex;align-items:center;gap:8px;margin-top:6px;color:#fde68a;font-size:11px;font-weight:850}.answer-retry button{border:1px solid rgba(253,230,138,.45);border-radius:8px;background:rgba(245,158,11,.15);padding:5px 8px;color:#fde68a;font-size:10px;font-weight:900}
 @media(max-height:680px){.question-screen.has-image{grid-template-rows:auto auto minmax(44px,.34fr) minmax(72px,.8fr) minmax(0,1.7fr)}.player-question-media img{max-height:20dvh}.question-screen.has-image .option-grid button{padding:7px}.question-screen.has-image .option-grid button>span{width:23px;height:23px;font-size:12px}.question-screen.has-image .option-grid button strong{font-size:clamp(13px,3.7vw,18px)}}
 </style>
