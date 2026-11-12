@@ -41,6 +41,7 @@ export type QuizTemplate = {
   id: string
   title: string
   status: 'draft' | 'active' | 'archived'
+  shuffleQuestions?: boolean
   questions: QuizQuestion[]
   createdAt: string
   updatedAt: string
@@ -140,5 +141,6 @@ export type CreateQuizQuestionInput = {
 export type CreateQuizTemplateInput = {
   title: string
   status: 'draft' | 'active' | 'archived'
+  shuffleQuestions: boolean
   questions: CreateQuizQuestionInput[]
 }

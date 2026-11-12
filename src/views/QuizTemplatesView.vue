@@ -58,6 +58,7 @@ const templates = ref<QuizTemplate[]>([])
 const selectedTemplateId = ref<string | null>(null)
 const title = ref('')
 const status = ref<QuizTemplate['status']>('draft')
+const shuffleQuestions = ref(true)
 const questions = ref<DraftQuestion[]>([createDraftQuestion()])
 const searchQuery = ref('')
 const statusFilter = ref<'all' | QuizTemplate['status']>('all')
@@ -93,6 +94,7 @@ const editorSignature = computed(() =>
   JSON.stringify({
     title: title.value,
     status: status.value,
+    shuffleQuestions: shuffleQuestions.value,
     questions: questions.value.map((question) => ({
       text: question.text,
       kind: question.kind,
@@ -186,6 +188,7 @@ function fillEditorFromTemplate(template: QuizTemplate) {
   selectedTemplateId.value = template.id
   title.value = template.title
   status.value = template.status
+  shuffleQuestions.value = template.shuffleQuestions !== false
   questions.value = template.questions.map((question) =>
     createDraftQuestion({
       text: question.text,
@@ -254,6 +257,7 @@ function resetToNewTemplate(askForConfirmation = true) {
   selectedTemplateId.value = null
   title.value = ''
   status.value = 'draft'
+  shuffleQuestions.value = true
   questions.value = [createDraftQuestion()]
   collapsedQuestionIds.value = new Set()
   setBaseline()
@@ -290,6 +294,7 @@ async function saveTemplate() {
   const payload: CreateQuizTemplateInput = {
     title: title.value.trim(),
     status: status.value,
+    shuffleQuestions: shuffleQuestions.value,
     questions: questions.value.map(toQuestionInput),
   }
 
@@ -668,6 +673,13 @@ onBeforeUnmount(() => {
               <option value="archived">Архив</option>
             </select>
           </label>
+          <label>
+            <span>Порядок вопросов</span>
+            <select v-model="shuffleQuestions">
+              <option :value="true">Перемешивать для каждой игры</option>
+              <option :value="false">Сохранить порядок шаблона</option>
+            </select>
+          </label>
         </div>
 
         <div class="content-heading">
@@ -936,7 +948,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .editor-actions { justify-content: flex-end; gap: 8px; }
 .save-hint { grid-column: 1 / -1; color: #94a3b8; font-size: 12px; font-weight: 750; text-align: right; }
 .save-hint.invalid { color: #fda4af; }
-.template-fields { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(220px,.7fr); gap: 12px; }
+.template-fields { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(190px,.65fr) minmax(250px,.9fr); gap: 12px; }
 .content-heading { margin: 28px 0 13px; }
 
 .questions-list { display: grid; gap: 11px; }
@@ -986,6 +998,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .editor-header { position: static; grid-template-columns: 1fr; margin-top: 0; }
   .editor-actions { justify-content: flex-start; flex-wrap: wrap; }
   .save-hint { text-align: left; }
+  .template-fields { grid-template-columns: 1fr 1fr; }
+  .template-fields > label:first-child { grid-column: 1 / -1; }
 }
 
 @media (max-width: 640px) {
@@ -1000,6 +1014,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .section-header, .content-heading { align-items: flex-start; flex-direction: column; }
   .section-header .primary-button, .content-heading .secondary-button { width: 100%; }
   .library-tools, .template-fields, .question-settings, .answers-grid { grid-template-columns: 1fr; }
+  .template-fields > label:first-child { grid-column: auto; }
   .template-grid { grid-template-columns: 1fr; }
   .editor-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; }
   .save-button { grid-column: 1 / -1; }
